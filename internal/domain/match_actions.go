@@ -5,22 +5,17 @@ import (
 	"slices"
 )
 
+const attackerTurnErrorFormat = "%w: attacker is %d"
+
 // Attack starts an attack with one card from the current attacker.
 func (m *Match) Attack(seat Seat, card Card) error {
-	if err := m.requireInProgress(); err != nil {
-		return err
-	}
-	if m.phase != MatchPhaseAttack {
-		return fmt.Errorf("%w: attack is allowed only in attack phase", ErrInvalidPhase)
-	}
-	if seat != m.attacker {
-		return fmt.Errorf("%w: attacker is %d", ErrNotPlayersTurn, m.attacker)
-	}
-	if err := m.removeFromHand(seat, card); err != nil {
+	if err := m.validateAttack(seat, card); err != nil {
 		return err
 	}
 
-	m.table = append(m.table, TablePair{Attack: card})
+	if err := m.addAttackCard(seat, card); err != nil {
+		return err
+	}
 	m.phase = MatchPhaseDefense
 	return nil
 }
@@ -59,6 +54,21 @@ func (m *Match) Defend(seat Seat, attackIndex int, defense Card) error {
 	return nil
 }
 
+// ThrowIn adds a legal attack card after ranks are present on the table.
+func (m *Match) ThrowIn(seat Seat, card Card) error {
+	if err := m.validateThrowIn(seat, card); err != nil {
+		return err
+	}
+
+	if err := m.addAttackCard(seat, card); err != nil {
+		return err
+	}
+	if m.phase == MatchPhaseThrowIn {
+		m.phase = MatchPhaseDefense
+	}
+	return nil
+}
+
 // FinishDefense moves fully defended table cards to discard and advances roles.
 func (m *Match) FinishDefense(seat Seat) error {
 	if err := m.requireInProgress(); err != nil {
@@ -68,7 +78,7 @@ func (m *Match) FinishDefense(seat Seat) error {
 		return fmt.Errorf("%w: all attacks must be defended before finishing", ErrInvalidPhase)
 	}
 	if seat != m.attacker {
-		return fmt.Errorf("%w: attacker is %d", ErrNotPlayersTurn, m.attacker)
+		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
 	}
 	if !m.allAttacksDefended() {
 		return ErrAttackNotDefended
@@ -88,19 +98,35 @@ func (m *Match) FinishDefense(seat Seat) error {
 	return nil
 }
 
-// Take gives table cards to the defender and advances to the next attack.
+// Take declares that the defender will take cards after optional throw-ins.
 func (m *Match) Take(seat Seat) error {
 	if err := m.requireInProgress(); err != nil {
 		return err
 	}
-	if m.phase != MatchPhaseDefense && m.phase != MatchPhaseThrowIn {
-		return fmt.Errorf("%w: take requires cards on the table", ErrInvalidPhase)
+	if m.phase != MatchPhaseDefense {
+		return fmt.Errorf("%w: take requires an active defense", ErrInvalidPhase)
 	}
 	if seat != m.defender {
 		return fmt.Errorf("%w: defender is %d", ErrNotPlayersTurn, m.defender)
 	}
 
-	m.hands[int(seat)] = append(m.hands[int(seat)], tableCards(m.table)...)
+	m.phase = MatchPhaseTaking
+	return nil
+}
+
+// FinishTake gives table cards to the defender and advances to the next attack.
+func (m *Match) FinishTake(seat Seat) error {
+	if err := m.requireInProgress(); err != nil {
+		return err
+	}
+	if m.phase != MatchPhaseTaking {
+		return fmt.Errorf("%w: finish take requires taking phase", ErrInvalidPhase)
+	}
+	if seat != m.attacker {
+		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
+	}
+
+	m.hands[int(m.defender)] = append(m.hands[int(m.defender)], tableCards(m.table)...)
 	m.table = nil
 
 	oldAttacker := m.attacker
@@ -110,6 +136,52 @@ func (m *Match) Take(seat Seat) error {
 	m.defender = nextSeat(m.attacker, len(m.hands))
 	m.phase = MatchPhaseAttack
 	m.updateCompletion()
+	return nil
+}
+
+func (m *Match) validateAttack(seat Seat, card Card) error {
+	if err := m.requireInProgress(); err != nil {
+		return err
+	}
+	if m.phase != MatchPhaseAttack {
+		return fmt.Errorf("%w: attack is allowed only in attack phase", ErrInvalidPhase)
+	}
+	if seat != m.attacker {
+		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
+	}
+	if !m.hasCard(seat, card) {
+		return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
+	}
+	return nil
+}
+
+func (m *Match) validateThrowIn(seat Seat, card Card) error {
+	if err := m.requireInProgress(); err != nil {
+		return err
+	}
+	if m.phase != MatchPhaseThrowIn && m.phase != MatchPhaseTaking {
+		return fmt.Errorf("%w: throw-in requires throw-in or taking phase", ErrInvalidPhase)
+	}
+	if seat != m.attacker {
+		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
+	}
+	if !m.hasCard(seat, card) {
+		return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
+	}
+	if !m.rankOnTable(card.Rank) {
+		return fmt.Errorf("%w: %s", ErrThrowInRankUnavailable, card)
+	}
+	if m.phase != MatchPhaseTaking && !m.canAddSuccessfulDefenseAttack() {
+		return fmt.Errorf("%w: first successful defense attack limit is %d", ErrAttackLimitReached, m.firstSuccessfulDefenseLimit())
+	}
+	return nil
+}
+
+func (m *Match) addAttackCard(seat Seat, card Card) error {
+	if err := m.removeFromHand(seat, card); err != nil {
+		return err
+	}
+	m.table = append(m.table, TablePair{Attack: card})
 	return nil
 }
 
@@ -125,6 +197,13 @@ func (m *Match) removeFromHand(seat Seat, card Card) error {
 	return nil
 }
 
+func (m *Match) hasCard(seat Seat, card Card) bool {
+	if !m.validSeat(seat) {
+		return false
+	}
+	return slices.Contains(m.hands[int(seat)], card)
+}
+
 func (m *Match) allAttacksDefended() bool {
 	if len(m.table) == 0 {
 		return false
@@ -135,6 +214,27 @@ func (m *Match) allAttacksDefended() bool {
 		}
 	}
 	return true
+}
+
+func (m *Match) rankOnTable(rank Rank) bool {
+	for _, pair := range m.table {
+		if pair.Attack.Rank == rank || pair.Defended && pair.Defense.Rank == rank {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Match) canAddSuccessfulDefenseAttack() bool {
+	limit := m.firstSuccessfulDefenseLimit()
+	return limit == 0 || len(m.table) < limit
+}
+
+func (m *Match) firstSuccessfulDefenseLimit() int {
+	if m.successfulDefenses > 0 || m.profile.FirstSuccessfulDefenseAttackLimit <= 0 {
+		return 0
+	}
+	return m.profile.FirstSuccessfulDefenseAttackLimit
 }
 
 func (m *Match) refill(order ...Seat) {

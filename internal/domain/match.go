@@ -15,6 +15,8 @@ var (
 	ErrMatchComplete = errors.New("match complete")
 	// ErrInvalidPhase means an action is not legal in the current phase.
 	ErrInvalidPhase = errors.New("invalid match phase")
+	// ErrInvalidAction means an action kind is unknown to the match.
+	ErrInvalidAction = errors.New("invalid action")
 	// ErrNotPlayersTurn means the acting seat does not own the current action.
 	ErrNotPlayersTurn = errors.New("not player's turn")
 	// ErrCardNotInHand means the acting player does not hold the requested card.
@@ -25,6 +27,10 @@ var (
 	ErrAttackAlreadyDefended = errors.New("attack already defended")
 	// ErrAttackNotDefended means at least one attack card still lacks defense.
 	ErrAttackNotDefended = errors.New("attack not defended")
+	// ErrThrowInRankUnavailable means a throw-in card rank is absent from the table.
+	ErrThrowInRankUnavailable = errors.New("throw-in rank unavailable")
+	// ErrAttackLimitReached means the current round cannot accept another attack card.
+	ErrAttackLimitReached = errors.New("attack limit reached")
 )
 
 // Seat identifies a player's place at the table.
@@ -45,6 +51,8 @@ const (
 	MatchPhaseDefense
 	// MatchPhaseThrowIn means current attacks are beaten and may be finished.
 	MatchPhaseThrowIn
+	// MatchPhaseTaking means the defender will take after optional throw-ins.
+	MatchPhaseTaking
 	// MatchPhaseComplete means the match has ended.
 	MatchPhaseComplete
 )

@@ -135,6 +135,138 @@ func TestDefendMovesBeatingCardToTable(t *testing.T) {
 	}
 }
 
+func TestThrowInRequiresRankOnTable(t *testing.T) {
+	attack := Card{Rank: Six, Suit: Clubs}
+	defense := Card{Rank: Seven, Suit: Clubs}
+	validThrowIn := Card{Rank: Six, Suit: Diamonds}
+	invalidThrowIn := Card{Rank: Ace, Suit: Spades}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			{attack, validThrowIn, invalidThrowIn},
+			{defense},
+		},
+		nil,
+		0,
+	))
+	mustRoundDefended(t, match, attack, defense)
+
+	err := match.ThrowIn(Seat(0), invalidThrowIn)
+	if !errors.Is(err, ErrThrowInRankUnavailable) {
+		t.Fatalf("ThrowIn error = %v, want ErrThrowInRankUnavailable", err)
+	}
+	if !slices.Contains(match.Hand(Seat(0)), invalidThrowIn) {
+		t.Fatalf("invalid throw-in card was removed")
+	}
+	if err := match.ThrowIn(Seat(0), validThrowIn); err != nil {
+		t.Fatalf("ThrowIn returned error: %v", err)
+	}
+
+	if match.Phase() != MatchPhaseDefense {
+		t.Fatalf("Phase = %v, want MatchPhaseDefense", match.Phase())
+	}
+	if got := match.Table(); len(got) != 2 || got[1].Attack != validThrowIn || got[1].Defended {
+		t.Fatalf("table = %v, want second undefended attack", got)
+	}
+}
+
+func TestLegalActionsAndApplyActionUseSameValidationPath(t *testing.T) {
+	attack := Card{Rank: Six, Suit: Clubs}
+	throwIn := Card{Rank: Six, Suit: Diamonds}
+	defense := Card{Rank: Seven, Suit: Clubs}
+	throwInDefense := Card{Rank: Eight, Suit: Diamonds}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			{attack, throwIn},
+			{defense, throwInDefense},
+		},
+		nil,
+		0,
+	))
+
+	attackAction := Action{Kind: ActionKindAttack, Seat: Seat(0), Card: attack}
+	if got := match.LegalActions(Seat(0)); !slices.Contains(got, attackAction) {
+		t.Fatalf("LegalActions attacker = %v, want attack action", got)
+	}
+	if got := match.LegalActions(Seat(1)); len(got) != 0 {
+		t.Fatalf("LegalActions defender before attack = %v, want none", got)
+	}
+	if err := match.ApplyAction(attackAction); err != nil {
+		t.Fatalf("ApplyAction attack returned error: %v", err)
+	}
+
+	defendAction := Action{Kind: ActionKindDefend, Seat: Seat(1), Card: defense}
+	takeAction := Action{Kind: ActionKindTake, Seat: Seat(1)}
+	if got := match.LegalActions(Seat(1)); !slices.Contains(got, defendAction) || !slices.Contains(got, takeAction) {
+		t.Fatalf("LegalActions defender = %v, want defend and take", got)
+	}
+	if err := match.ApplyAction(defendAction); err != nil {
+		t.Fatalf("ApplyAction defend returned error: %v", err)
+	}
+
+	throwInAction := Action{Kind: ActionKindThrowIn, Seat: Seat(0), Card: throwIn}
+	finishDefenseAction := Action{Kind: ActionKindFinishDefense, Seat: Seat(0)}
+	if got := match.LegalActions(Seat(0)); !slices.Contains(got, throwInAction) || !slices.Contains(got, finishDefenseAction) {
+		t.Fatalf("LegalActions throw-in = %v, want throw-in and finish defense", got)
+	}
+	if err := match.ApplyAction(throwInAction); err != nil {
+		t.Fatalf("ApplyAction throw-in returned error: %v", err)
+	}
+
+	throwInDefendAction := Action{Kind: ActionKindDefend, Seat: Seat(1), Card: throwInDefense, AttackIndex: 1}
+	if got := match.LegalActions(Seat(1)); !slices.Contains(got, throwInDefendAction) {
+		t.Fatalf("LegalActions defender after throw-in = %v, want second defense", got)
+	}
+	if err := match.ApplyAction(Action{}); !errors.Is(err, ErrInvalidAction) {
+		t.Fatalf("ApplyAction empty action error = %v, want ErrInvalidAction", err)
+	}
+}
+
+func TestFirstSuccessfulDefenseAttackLimitStopsSixthAttack(t *testing.T) {
+	attacks := []Card{
+		{Rank: Six, Suit: Clubs},
+		{Rank: Six, Suit: Diamonds},
+		{Rank: Seven, Suit: Spades},
+		{Rank: Six, Suit: Spades},
+		{Rank: Eight, Suit: Clubs},
+	}
+	defenses := []Card{
+		{Rank: Seven, Suit: Clubs},
+		{Rank: Eight, Suit: Diamonds},
+		{Rank: Eight, Suit: Spades},
+		{Rank: Nine, Suit: Spades},
+		{Rank: Nine, Suit: Clubs},
+	}
+	extra := Card{Rank: Six, Suit: Hearts}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			append(slices.Clone(attacks), extra),
+			defenses,
+		},
+		nil,
+		0,
+	))
+
+	if err := match.Attack(Seat(0), attacks[0]); err != nil {
+		t.Fatalf("Attack returned error: %v", err)
+	}
+	for i, defense := range defenses {
+		if err := match.Defend(Seat(1), i, defense); err != nil {
+			t.Fatalf("Defend %d returned error: %v", i, err)
+		}
+		if i == len(defenses)-1 {
+			break
+		}
+		if err := match.ThrowIn(Seat(0), attacks[i+1]); err != nil {
+			t.Fatalf("ThrowIn %d returned error: %v", i+1, err)
+		}
+	}
+
+	err := match.ThrowIn(Seat(0), extra)
+	if !errors.Is(err, ErrAttackLimitReached) {
+		t.Fatalf("ThrowIn error = %v, want ErrAttackLimitReached", err)
+	}
+}
+
 func TestFinishDefenseDiscardsRefillsAndSwapsRoles(t *testing.T) {
 	attack := Card{Rank: Six, Suit: Clubs}
 	defense := Card{Rank: Seven, Suit: Clubs}
@@ -207,6 +339,16 @@ func TestTakeMovesTableToDefenderAndKeepsTwoPlayerAttacker(t *testing.T) {
 		t.Fatalf("Take returned error: %v", err)
 	}
 
+	if match.Phase() != MatchPhaseTaking {
+		t.Fatalf("Phase = %v, want MatchPhaseTaking", match.Phase())
+	}
+	if got := match.Hand(Seat(1)); !slices.Equal(got, []Card{defenderCard}) {
+		t.Fatalf("defender hand before finish take = %v, want original card", got)
+	}
+	if err := match.FinishTake(Seat(0)); err != nil {
+		t.Fatalf("FinishTake returned error: %v", err)
+	}
+
 	if match.Phase() != MatchPhaseAttack {
 		t.Fatalf("Phase = %v, want MatchPhaseAttack", match.Phase())
 	}
@@ -218,6 +360,59 @@ func TestTakeMovesTableToDefenderAndKeepsTwoPlayerAttacker(t *testing.T) {
 	}
 	if got := match.Hand(Seat(1)); !slices.Equal(got, []Card{defenderCard, attack}) {
 		t.Fatalf("defender hand = %v, want original card plus taken attack", got)
+	}
+}
+
+func TestTakingAllowsThrowInsBeyondFirstSuccessfulDefenseLimit(t *testing.T) {
+	attacks := []Card{
+		{Rank: Six, Suit: Clubs},
+		{Rank: Six, Suit: Diamonds},
+		{Rank: Seven, Suit: Spades},
+		{Rank: Six, Suit: Spades},
+		{Rank: Eight, Suit: Clubs},
+	}
+	defenses := []Card{
+		{Rank: Seven, Suit: Clubs},
+		{Rank: Eight, Suit: Diamonds},
+		{Rank: Eight, Suit: Spades},
+		{Rank: Nine, Suit: Spades},
+	}
+	extra := Card{Rank: Six, Suit: Hearts}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			append(slices.Clone(attacks), extra),
+			defenses,
+		},
+		nil,
+		0,
+	))
+
+	if err := match.Attack(Seat(0), attacks[0]); err != nil {
+		t.Fatalf("Attack returned error: %v", err)
+	}
+	for i, defense := range defenses {
+		if err := match.Defend(Seat(1), i, defense); err != nil {
+			t.Fatalf("Defend %d returned error: %v", i, err)
+		}
+		if err := match.ThrowIn(Seat(0), attacks[i+1]); err != nil {
+			t.Fatalf("ThrowIn %d returned error: %v", i+1, err)
+		}
+	}
+	if err := match.Take(Seat(1)); err != nil {
+		t.Fatalf("Take returned error: %v", err)
+	}
+
+	if err := match.ThrowIn(Seat(0), extra); err != nil {
+		t.Fatalf("ThrowIn after take returned error: %v", err)
+	}
+	if got := match.Table(); len(got) != 6 {
+		t.Fatalf("table has %d attack pairs, want 6", len(got))
+	}
+	if err := match.FinishTake(Seat(0)); err != nil {
+		t.Fatalf("FinishTake returned error: %v", err)
+	}
+	if got := match.Hand(Seat(1)); len(got) != 10 {
+		t.Fatalf("defender took %d cards, want 10 table cards", len(got))
 	}
 }
 
