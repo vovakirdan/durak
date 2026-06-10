@@ -152,6 +152,29 @@ func (m *Match) TrumpIndicator() Card {
 	return m.trumpIndicator
 }
 
+// PlayerCount returns the number of seats in the match.
+func (m *Match) PlayerCount() int {
+	return len(m.hands)
+}
+
+// HandSize returns the number of cards held by a seat.
+func (m *Match) HandSize(seat Seat) int {
+	if !m.validSeat(seat) {
+		return 0
+	}
+	return len(m.hands[int(seat)])
+}
+
+// StockCount returns how many cards remain in the draw stock.
+func (m *Match) StockCount() int {
+	return len(m.stock)
+}
+
+// DiscardCount returns how many cards have been beaten and discarded.
+func (m *Match) DiscardCount() int {
+	return len(m.discard)
+}
+
 // SuccessfulDefenses returns how many rounds ended with cards beaten.
 func (m *Match) SuccessfulDefenses() int {
 	return m.successfulDefenses
