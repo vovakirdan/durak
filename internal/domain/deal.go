@@ -3,24 +3,37 @@ package domain
 import (
 	"errors"
 	"fmt"
+	rand "math/rand/v2"
 	"slices"
 )
 
 var (
+	// ErrInvalidPlayerCount means the requested player count cannot be dealt.
 	ErrInvalidPlayerCount = errors.New("invalid player count")
+	// ErrSetupAttemptsLimit means setup could not satisfy rules in time.
 	ErrSetupAttemptsLimit = errors.New("setup attempts limit reached")
 )
 
-// ShuffleFunc mutates cards into a shuffled order.
+// Shuffler mutates cards into a shuffled order.
+type Shuffler interface {
+	Shuffle(cards []Card)
+}
+
+// ShuffleFunc adapts a function into a Shuffler.
 type ShuffleFunc func(cards []Card)
+
+// Shuffle mutates cards by calling fn.
+func (fn ShuffleFunc) Shuffle(cards []Card) {
+	fn(cards)
+}
 
 // IntnFunc returns an integer in [0, n).
 type IntnFunc func(n int) int
 
-// DealOptions contains injectable randomness for deterministic tests.
+// DealOptions contains injectable randomness for deterministic deals.
 type DealOptions struct {
-	Shuffle ShuffleFunc
-	Choose  IntnFunc
+	Shuffler Shuffler
+	Choose   IntnFunc
 }
 
 // InitialDeal is the result of initial dealing and trump selection.
@@ -42,22 +55,22 @@ func DealInitial(playerCount int, profile RuleProfile, opts DealOptions) (Initia
 		return InitialDeal{}, err
 	}
 
-	shuffle := opts.Shuffle
-	if shuffle == nil {
-		shuffle = func([]Card) {}
+	shuffler := opts.Shuffler
+	if shuffler == nil {
+		shuffler = defaultShuffler{}
 	}
 
 	maxAttempts := max(profile.MaxSetupAttempts, 1)
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		deck := NewDeck36()
-		shuffle(deck)
+		shuffler.Shuffle(deck)
 
 		hands, stock := dealHands(deck, playerCount, profile.InitialHandSize)
 		if hasRedealHand(hands, profile.RedealSameSuitThreshold) {
 			continue
 		}
 
-		trump, reselections, err := selectTrumpIndicator(stock, profile, shuffle)
+		trump, reselections, err := selectTrumpIndicator(stock, profile, shuffler)
 		if err != nil {
 			return InitialDeal{}, err
 		}
@@ -89,8 +102,17 @@ func validateDealInput(playerCount int, profile RuleProfile) error {
 	return nil
 }
 
-func dealHands(deck []Card, playerCount, handSize int) ([][]Card, []Card) {
-	hands := make([][]Card, playerCount)
+type defaultShuffler struct{}
+
+// Shuffle randomly reorders cards with the standard library RNG.
+func (defaultShuffler) Shuffle(cards []Card) {
+	rand.Shuffle(len(cards), func(i, j int) {
+		cards[i], cards[j] = cards[j], cards[i]
+	})
+}
+
+func dealHands(deck []Card, playerCount, handSize int) (hands [][]Card, stock []Card) {
+	hands = make([][]Card, playerCount)
 	for cardIndex := range handSize {
 		for player := range playerCount {
 			deckIndex := cardIndex*playerCount + player
@@ -115,14 +137,14 @@ func hasRedealHand(hands [][]Card, threshold int) bool {
 	return false
 }
 
-func selectTrumpIndicator(stock []Card, profile RuleProfile, shuffle ShuffleFunc) (Card, int, error) {
+func selectTrumpIndicator(stock []Card, profile RuleProfile, shuffler Shuffler) (Card, int, error) {
 	maxAttempts := max(profile.MaxSetupAttempts, 1)
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for attempt := range maxAttempts {
 		trump := stock[len(stock)-1]
 		if trump.Rank != profile.TrumpIndicatorForbiddenRank {
 			return trump, attempt, nil
 		}
-		shuffle(stock)
+		shuffler.Shuffle(stock)
 	}
 	return Card{}, 0, ErrSetupAttemptsLimit
 }

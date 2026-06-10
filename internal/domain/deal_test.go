@@ -31,7 +31,7 @@ func TestDealInitial(t *testing.T) {
 	stock := stockWithBottom(Card{Rank: Nine, Suit: Hearts}, hands...)
 	deck := deckForDeal(hands, stock)
 
-	deal, err := DealInitial(2, profile, DealOptions{Shuffle: copyDeck(deck)})
+	deal, err := DealInitial(2, profile, DealOptions{Shuffler: copyDeck(deck)})
 	if err != nil {
 		t.Fatalf("DealInitial returned error: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestDealInitialRedealsWhenHandHasTooManyCardsOfOneSuit(t *testing.T) {
 		deckForDeal(validHands, stockWithBottom(Card{Rank: Ten, Suit: Hearts}, validHands...)),
 	}
 
-	deal, err := DealInitial(2, profile, DealOptions{Shuffle: copyDeckSequence(decks)})
+	deal, err := DealInitial(2, profile, DealOptions{Shuffler: copyDeckSequence(decks)})
 	if err != nil {
 		t.Fatalf("DealInitial returned error: %v", err)
 	}
@@ -138,14 +138,14 @@ func TestDealInitialReshufflesOnlyStockWhenTrumpIndicatorIsAce(t *testing.T) {
 	initialDeck := deckForDeal(hands, initialStock)
 
 	deal, err := DealInitial(2, profile, DealOptions{
-		Shuffle: func(cards []Card) {
+		Shuffler: ShuffleFunc(func(cards []Card) {
 			switch len(cards) {
 			case 36:
 				copy(cards, initialDeck)
 			default:
 				copy(cards, reshuffledStock)
 			}
-		},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("DealInitial returned error: %v", err)
@@ -186,7 +186,7 @@ func TestDealInitialRandomFirstAttackerWhenNoPlayerHasTrump(t *testing.T) {
 	deck := deckForDeal(hands, stock)
 
 	deal, err := DealInitial(2, profile, DealOptions{
-		Shuffle: copyDeck(deck),
+		Shuffler: copyDeck(deck),
 		Choose: func(n int) int {
 			if n != 2 {
 				t.Fatalf("Choose called with n = %d, want 2", n)
@@ -234,7 +234,7 @@ func copyDeckSequence(decks [][]Card) ShuffleFunc {
 func deckForDeal(hands [][]Card, stock []Card) []Card {
 	deck := make([]Card, 0, 36)
 	for cardIndex := range len(hands[0]) {
-		for player := range len(hands) {
+		for player := range hands {
 			deck = append(deck, hands[player][cardIndex])
 		}
 	}
@@ -266,8 +266,8 @@ func moveCardToBottom(cards []Card, card Card) {
 	if index == -1 {
 		return
 	}
-	cards = append(cards[:index], cards[index+1:]...)
-	cards = append(cards, card)
+	copy(cards[index:], cards[index+1:])
+	cards[len(cards)-1] = card
 }
 
 func equalHands(a, b [][]Card) bool {

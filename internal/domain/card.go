@@ -6,10 +6,15 @@ import "fmt"
 type Suit uint8
 
 const (
+	// SuitUnknown is the zero value for an unset suit.
 	SuitUnknown Suit = iota
+	// Clubs is the clubs suit.
 	Clubs
+	// Diamonds is the diamonds suit.
 	Diamonds
+	// Hearts is the hearts suit.
 	Hearts
+	// Spades is the spades suit.
 	Spades
 )
 
@@ -17,16 +22,26 @@ const (
 type Rank uint8
 
 const (
+	// RankUnknown is the zero value for an unset rank.
 	RankUnknown Rank = iota
-	Six         Rank = 6
-	Seven       Rank = 7
-	Eight       Rank = 8
-	Nine        Rank = 9
-	Ten         Rank = 10
-	Jack        Rank = 11
-	Queen       Rank = 12
-	King        Rank = 13
-	Ace         Rank = 14
+	// Six is the lowest rank in the 36-card Durak deck.
+	Six Rank = 6
+	// Seven is a Durak card rank.
+	Seven Rank = 7
+	// Eight is a Durak card rank.
+	Eight Rank = 8
+	// Nine is a Durak card rank.
+	Nine Rank = 9
+	// Ten is a Durak card rank.
+	Ten Rank = 10
+	// Jack is a Durak card rank.
+	Jack Rank = 11
+	// Queen is a Durak card rank.
+	Queen Rank = 12
+	// King is a Durak card rank.
+	King Rank = 13
+	// Ace is the highest rank in the 36-card Durak deck.
+	Ace Rank = 14
 )
 
 // Card is a single playing card.

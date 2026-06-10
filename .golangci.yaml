@@ -1,0 +1,102 @@
+version: "2"
+
+run:
+  timeout: 5m
+  go: '1.26'
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  enable:
+    # Required baseline linters.
+    - errcheck       # unchecked errors
+    - govet          # standard vet analysis
+    - ineffassign    # ineffectual assignments
+    - staticcheck    # extended static analysis
+    - unused         # unused code
+    - unparam        # unused function parameters
+
+    # Style and formatting.
+    - misspell       # comment spelling
+
+    # Code quality.
+    - gosec          # security checks
+    - gocritic       # opinionated code diagnostics
+    - revive         # golint replacement
+
+    # Performance.
+    - prealloc       # slice preallocation hints
+
+    # Error handling.
+    - errname        # error type naming
+    - errorlint      # error wrapping and inspection
+
+    # Copying.
+    - copyloopvar    # loop variable copy issues (Go 1.22+)
+
+    # Modern Go.
+    - intrange       # integer range loops (Go 1.22+)
+
+  settings:
+    errcheck:
+      check-blank: true
+      check-type-assertions: true
+
+    govet:
+      enable-all: true
+      disable:
+        - fieldalignment  # too noisy for this project
+
+    gosec:
+      excludes:
+        - G104  # duplicates errcheck
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+      disabled-checks:
+        - commentFormatting
+        - whyNoLint
+
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+          arguments:
+            - checkPrivateReceivers
+            - disableStutteringCheck
+
+  exclusions:
+    rules:
+      # Test exemptions.
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gosec
+          - gocritic
+
+      # Generated code exemptions.
+      - path: \.pb\.go$
+        linters:
+          - gofmt
+          - goimports
+          - gocritic
+          - stylecheck
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+output:
+  formats:
+    text:
+      print-issued-lines: true
+      print-linter-name: true
+      colors: true

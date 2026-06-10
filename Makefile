@@ -1,7 +1,9 @@
 GO ?= go
+LINTER ?= golangci-lint
 BINARY ?= durak
 GOCACHE ?= $(CURDIR)/.cache/go-build
 GOMODCACHE ?= $(CURDIR)/.cache/go-mod
+GOLANGCI_LINT_CACHE ?= $(CURDIR)/.cache/golangci-lint
 
 .PHONY: fmt
 fmt:
@@ -10,6 +12,10 @@ fmt:
 .PHONY: vet
 vet:
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) vet ./...
+
+.PHONY: lint
+lint:
+	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) GOLANGCI_LINT_CACHE=$(GOLANGCI_LINT_CACHE) $(LINTER) run
 
 .PHONY: test
 test:
@@ -24,4 +30,4 @@ run:
 	GOCACHE=$(GOCACHE) GOMODCACHE=$(GOMODCACHE) $(GO) run ./cmd/durak
 
 .PHONY: check
-check: fmt vet test
+check: fmt lint test

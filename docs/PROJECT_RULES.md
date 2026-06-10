@@ -165,9 +165,10 @@ Status: Approved.
 ## 11. Code Quality and Hygiene Rules
 
 - **Mandatory:** Run `gofmt` on all Go code.
+- **Mandatory:** `golangci-lint run` is the mandatory project linter and must pass through `make lint`.
 - **Mandatory:** `go test ./...` must pass before implementation work is considered done.
-- **Default:** Run `go vet ./...` once the repo is bootstrapped.
-- **Default:** Add `golangci-lint` only after a project-specific lint profile is defined.
+- **Mandatory:** `make check` must run formatting, linting, and tests before implementation work is considered done.
+- **Default:** Keep `go vet ./...` available as a standalone diagnostic target even though `govet` is part of the lint profile.
 - **Mandatory:** Non-test Go files over 700 LOC must be split before merge/commit.
 - **Default:** Test files are exempt from the 700 LOC hard cap, but large tests should still be split when setup, fixtures, and assertions become hard to scan.
 - **Mandatory:** Errors must preserve enough context for debugging while remaining usable by adapters.
