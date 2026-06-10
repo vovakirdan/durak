@@ -1,0 +1,144 @@
+# Technology Stack
+
+## 1. Context Summary
+
+- **Product type:** terminal-first Durak game that starts as local offline CLI and grows into TUI, SSH-hosted multiplayer, persistent history, ratings, internal currency, bot strategy DSL, and AI-assisted bot decisions.
+- **Primary user flow:** run the game in a Linux terminal, play a full match against a bot, then later connect to a hosted terminal session over SSH.
+- **Key constraints:**
+  - Keep the first implementation small and playable.
+  - Keep game rules independent from CLI/TUI/SSH presentation.
+  - Prefer a portable server-friendly artifact.
+  - Make SSH gameplay a first-class target.
+  - Do not introduce real-money mechanics.
+
+## 2. System Shape
+
+- **Relevant parts:**
+  - Domain core for cards, rules, match state, validation, actions, and events.
+  - Local CLI adapter for the first playable version.
+  - Bot strategy adapter for algorithmic and future AI-driven decisions.
+  - Future Bubble Tea TUI adapter.
+  - Future Wish SSH daemon that hosts game sessions.
+  - Future persistence layer for match history, ratings, currency, and replay/training data.
+  - Future operational logging and observability layer for hosted daemon mode.
+- **Why these parts exist:** the product needs a small local game first, but its target shape includes server-hosted terminal sessions and long-lived player/game data.
+
+## 3. Interaction Surfaces
+
+### Local CLI
+
+- **Type:** CLI.
+- **Framework/runtime:** Go standard library.
+- **Delivery or rendering approach:** command loop with plain terminal output and text commands.
+- **State/data access approach:** in-process game session; no persistence for the first core milestone.
+- **Why this choice fits:** it keeps M1/M2 focused on rule correctness and playability instead of UI framework work.
+
+### Terminal TUI
+
+- **Type:** TUI.
+- **Framework/runtime:** Go with Charm Bubble Tea, Bubbles, and Lip Gloss.
+- **Delivery or rendering approach:** Bubble Tea model/update/view loop backed by the same domain core used by the CLI.
+- **State/data access approach:** TUI owns presentation state only; match state remains in the game core/session layer.
+- **Why this choice fits:** Bubble Tea gives a mature Go-native TUI path and aligns directly with the later Wish SSH server story.
+
+### SSH Game Surface
+
+- **Type:** SSH-hosted terminal application.
+- **Framework/runtime:** Go with Charm Wish.
+- **Delivery or rendering approach:** Wish hosts a Bubble Tea program per SSH session.
+- **State/data access approach:** session service creates or resumes game sessions and talks to persistence once storage exists.
+- **Why this choice fits:** SSH access is a target product feature, and Wish is built specifically for serving terminal applications over SSH.
+
+## 4. Execution and Service Components
+
+### Game Core
+
+- **Responsibility:** cards, deck, rule profiles, match setup, move validation, turn transitions, round resolution, event emission, and outcome detection.
+- **Language/runtime:** Go.
+- **Framework/approach:** framework-free package with explicit domain types and deterministic APIs.
+- **Validation/contracts:** typed actions, validation results, rule-profile checks, table-driven tests, and deterministic RNG injection for tests.
+- **Data access approach:** no direct storage access; emits events through an interface.
+- **Why this choice fits:** game correctness should not depend on CLI, TUI, SSH, storage, or bot implementation details.
+
+### Bot Strategy Runtime
+
+- **Responsibility:** choose legal actions for bot-controlled seats.
+- **Language/runtime:** Go.
+- **Framework/approach:** strategy interface with simple deterministic implementations first.
+- **Validation/contracts:** bot receives read-only decision context and returns an action that the game core validates.
+- **Data access approach:** no storage access in the first implementation; future strategies may consume historical summaries through explicit ports.
+- **Why this choice fits:** supports simple bots now and future DSL/AI strategies without giving bots mutable engine internals.
+
+### Future Daemon
+
+- **Responsibility:** host SSH sessions, manage player identity, table/session lifecycle, persistence, and operational logs.
+- **Language/runtime:** Go.
+- **Framework/approach:** standard Go service process with Wish for SSH.
+- **Validation/contracts:** daemon talks to the core through session/application services, not direct state mutation.
+- **Data access approach:** repository interfaces backed by SQLite first. The exact Go data-access library and SQLite driver are selected at the persistence milestone, with portability and transaction clarity as the main criteria.
+- **Why this choice fits:** a single Go service keeps deployment and runtime operations simple on a VPS.
+
+## 5. Interfaces and Compatibility
+
+- **Primary API style:** in-process interfaces for MVP; future daemon boundaries stay internal Go interfaces until a remote API is needed.
+- **Schema/documentation approach:** domain events and persisted records use versioned structs and stable serialization for replay/export compatibility. JSON is the first candidate because it is easy to inspect and export, not because it is the only acceptable format.
+- **Auth/session strategy:** none for local CLI; future SSH mode starts with SSH key identity or server-managed player aliases.
+- **Realtime approach:** local in-process event loop for CLI/TUI; one Bubble Tea program per SSH session under Wish for hosted play.
+- **Compatibility notes across parts:**
+  - CLI, TUI, and SSH must call the same application/session layer.
+  - Game core must not import Bubble Tea, Wish, database drivers, or AI clients.
+  - Bot strategies must submit normal player actions so validation remains centralized.
+  - Persistence consumes domain events and snapshots; it does not own game rules.
+- **Why these choices fit together:** the stack keeps Go across every first-class runtime while preserving enough boundaries to replace presentation or strategy layers later.
+
+## 6. Data Layer
+
+- **Primary database:** no database for the first CLI/core milestone; SQLite for the first persistent daemon/history milestone.
+- **Go database access:** repository interfaces at the application boundary. Candidate implementations include direct `database/sql`, `sqlc`-generated code, or a small query helper. Avoid a full ORM unless the persistence model becomes CRUD-heavy enough to justify it.
+- **SQLite driver direction:** prefer a pure-Go SQLite driver if single-binary cross-compilation remains important. Re-evaluate against CGO-based drivers when persistence begins, especially if SQLite extension support or performance becomes more important than build portability.
+- **Cache or queue dependencies:** none for MVP or early daemon.
+- **Search or analytics storage:** none initially; export match history/events for offline analysis before adding dedicated analytics storage.
+- **Why this choice fits:** SQLite is enough for hosted private play, match history, ratings, and currency ledgers while keeping operations small. PostgreSQL remains an upgrade path, not an early dependency.
+
+## 7. Async, Automation, or AI Components
+
+- **Need for jobs/workflows/agents:** none in the first playable CLI.
+- **Chosen approach:** explicit Go interfaces for future strategy engines and AI adapters.
+- **Technology:** simple in-process algorithmic strategies first; future AI adapter over HTTP or local process boundary after bot evaluation requirements are known.
+- **Why this choice fits:** it keeps the game loop deterministic and testable while leaving room for DSL and AI decision-making later.
+
+## 8. Observability and Operations
+
+- **Logging:** no logging dependency in the domain core. For daemon mode, use a structured logging port with a `log/slog`-compatible default unless a later benchmark or operational need justifies zap/zerolog.
+- **Metrics:** none for local CLI; future daemon can expose Prometheus-compatible metrics if hosted use needs it.
+- **Tracing:** none for MVP; add OpenTelemetry only if daemon complexity justifies it.
+- **Error monitoring:** none for local CLI; daemon errors should start with structured logs and process supervision.
+- **Why this choice fits:** early observability should help debug games and sessions without adding infrastructure before it is needed.
+
+## 9. Dev Tooling
+
+- **Package/dependency management:** Go modules.
+- **Linting/formatting:** `gofmt` and `go vet` from the start. Add `golangci-lint` only after project rules define the lint profile, so early work is not blocked by noisy defaults.
+- **Testing:** standard `go test`; table-driven unit tests for rules; deterministic RNG tests for dealing/trump/first-attacker policies; later integration tests for CLI and SSH session flows.
+- **Migrations:** no migrations before persistence. Candidate tools for the first persistent version are Goose, golang-migrate, or a very small embedded migration runner if the schema remains tiny.
+- **Containerization:** not required for local CLI; future daemon can ship as a static-ish Linux binary or small container image.
+- **Local development workflow:** `go test ./...` as the baseline verification command; run the CLI binary locally for manual playtesting.
+- **CI/CD baseline:** build, test, vet, and release Linux binaries; add container publish only when daemon mode begins.
+
+## 10. Research Notes
+
+- Bubble Tea uses a model/update/view architecture for terminal UIs, which maps cleanly to a UI adapter over a separate domain core: https://pkg.go.dev/github.com/charmbracelet/bubbletea
+- Wish provides SSH app middleware for Bubble Tea and creates a Bubble Tea program per SSH session: https://github.com/charmbracelet/wish and https://pkg.go.dev/charm.land/wish/v2/bubbletea
+- Ratatui is a strong Rust TUI library, but SSH-hosted TUI support is less direct for this product than Charm's Go stack: https://docs.rs/ratatui/latest/ratatui/
+- Textual is a strong Python TUI framework with terminal and browser serving, but it weakens the single-portable-binary and Go/Wish SSH path: https://textual.textualize.io/
+- `database/sql` is a standard Go abstraction with explicit connection-pool and transaction semantics, but using it directly everywhere can create manual scanning boilerplate: https://pkg.go.dev/database/sql
+- `modernc.org/sqlite` is a CGo-free SQLite driver candidate; `github.com/mattn/go-sqlite3` is mature and `database/sql` compatible but requires CGO/GCC: https://pkg.go.dev/modernc.org/sqlite and https://github.com/mattn/go-sqlite3
+- `log/slog` provides standard structured logging with pluggable handlers; zap and zerolog remain candidates if daemon performance or handler features require them: https://pkg.go.dev/log/slog, https://github.com/uber-go/zap, and https://github.com/rs/zerolog
+- Goose and golang-migrate are both viable Go migration candidates; defer the choice until there is an actual SQLite schema to evolve: https://github.com/pressly/goose and https://github.com/golang-migrate/migrate
+
+## 11. Rejected Alternatives
+
+- **Rust + Ratatui:** rejected as the primary stack because the product explicitly values SSH-hosted terminal play and simple deployment. Rust remains attractive for strict domain modeling, but would add more infrastructure work around SSH/session serving.
+- **Python + Textual:** rejected as the primary stack because the target product benefits from a small portable Go server binary and the Charm SSH/TUI ecosystem. Textual remains a viable future prototype surface if the domain core is exposed through a stable service boundary.
+- **Early PostgreSQL:** rejected because local CLI and private hosted play do not need a separate database server at the start.
+- **Early web app:** rejected because terminal and SSH are first-class product surfaces; a browser UI would distract from the core game loop and terminal UX.

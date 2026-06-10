@@ -1,0 +1,69 @@
+[constraints]
+max_cycles = 0
+max_coupling = "A"
+max_cc = 60
+no_god_files = true
+
+[[layers]]
+name = "entrypoints"
+paths = [
+  "cmd/durak/*",
+]
+order = 0
+
+[[layers]]
+name = "adapters"
+paths = [
+  "internal/adapters/cli/*",
+  "internal/adapters/bot/*",
+]
+order = 1
+
+[[layers]]
+name = "application"
+paths = [
+  "internal/app/*",
+]
+order = 2
+
+[[layers]]
+name = "domain"
+paths = [
+  "internal/domain/*",
+]
+order = 3
+
+[[boundaries]]
+from = "internal/domain/*"
+to = "internal/app/*"
+reason = "Domain rules must not depend on application orchestration."
+
+[[boundaries]]
+from = "internal/domain/*"
+to = "internal/adapters/*"
+reason = "Domain rules must stay independent from CLI, bot, TUI, SSH, and storage adapters."
+
+[[boundaries]]
+from = "internal/domain/*"
+to = "cmd/*"
+reason = "Domain rules must be callable outside executable entrypoints."
+
+[[boundaries]]
+from = "internal/app/*"
+to = "internal/adapters/*"
+reason = "Application/session services expose ports; adapters implement or call them."
+
+[[boundaries]]
+from = "internal/app/*"
+to = "cmd/*"
+reason = "Application/session logic must be reusable outside executable wiring."
+
+[[boundaries]]
+from = "internal/adapters/cli/*"
+to = "internal/adapters/bot/*"
+reason = "CLI must not coordinate bot strategy directly; wiring belongs in cmd or app."
+
+[[boundaries]]
+from = "internal/adapters/bot/*"
+to = "internal/adapters/cli/*"
+reason = "Bot strategies must stay independent from presentation."
