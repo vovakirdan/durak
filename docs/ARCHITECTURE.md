@@ -24,7 +24,7 @@
 ## 3. System Components
 
 - **Domain core:** cards, deck, rule profile, match state, legal actions, state transitions, events, and outcome detection.
-- **Application/session layer:** coordinates a match, accepts player actions, invokes bot strategies, owns active in-memory session state, and exposes snapshots to adapters.
+- **Application/session layer:** coordinates matches and optional in-memory series, accepts player actions, invokes bot strategies, owns active in-memory state, and exposes snapshots to adapters.
 - **CLI adapter:** parses terminal commands, renders text output, and calls the application layer.
 - **Bot adapter:** implements strategy interfaces using read-only decision contexts.
 - **Future TUI adapter:** Bubble Tea presentation and input layer over the same application/session layer.
@@ -74,6 +74,7 @@
 - **Responsibility:** orchestrate active matches and expose a stable API for adapters.
 - **Internal module structure:**
   - session service.
+  - series/table orchestration for consecutive matches.
   - player/seat registry for the active match.
   - command handling: submit action, ask bot, advance state.
   - snapshot/query methods for rendering.
@@ -108,6 +109,7 @@
 
 - **Primary contracts/interfaces:**
   - `SessionService`: starts matches, accepts actions, advances bot turns, returns render snapshots.
+  - `Series`: links optional consecutive matches at one table through stable seat order and completed match results.
   - `Strategy`: receives decision context and returns a proposed action.
   - `EventStore`: appends structured domain/application events for one match stream.
   - `RandomSource`: enables deterministic tests for shuffle and first-attacker fallback.
@@ -137,7 +139,7 @@
 
 - **Core entities and ownership:**
   - Domain core owns card, deck, rule, match, round, table, action, and event semantics.
-  - Application/session layer owns active in-memory match sessions.
+  - Application/session layer owns active in-memory match sessions and in-memory series/table state.
   - Future persistence owns durable records, not live rule execution.
 - **Event stream roles:**
   - Public events are safe for visible history, public replay, and local JSONL export.
@@ -147,8 +149,9 @@
   - Projections/read models are derived tables for statistics, scoring, ratings, and global analytics; they must be rebuildable from event streams.
 - **Match and series boundaries:**
   - A match is self-contained: rules, seats, initial deal, actions, and outcome must be enough to replay/analyze that match without reading a previous match.
-  - A series/table session links optional consecutive matches through `series_id`, stable `seat_order`, match ids, and previous loser metadata.
+  - A series/table session links optional consecutive matches through `series_id`, stable `seat_order`, match ids, completed match results, and previous loser metadata.
   - The "next match starts before the previous loser" rule is an input to new-match creation from series/table state, not a hidden dependency inside an old match stream.
+  - The app layer applies the consecutive-match first-attacker override after deal setup and before `NewMatch`; the resulting initial deal is still recorded as the canonical internal event for replay.
   - Multiplayer adapters must expose per-seat views from internal state; public streams are not player-private views.
 - **Primary storage responsibilities:**
   - MVP before event-history milestone: no durable storage.
@@ -250,7 +253,16 @@
 9. If it is the bot's turn, application layer asks the strategy for an action and submits it through the same validation path.
 10. Loop continues until the domain core reports match completion.
 
-### 13.2 Future SSH Match Flow
+### 13.2 Local Series Match Flow
+
+1. Adapter or future table service creates an app-level `Series` with `series_id`, stable `seat_order`, and rule profile.
+2. Series starts a match by dealing through the domain setup helper.
+3. If the previous completed match had a loser, series sets the first attacker to the seat before that loser before creating the domain match.
+4. Session emits the canonical internal deal event with the final first attacker value, so the match can be replayed without reading prior matches.
+5. When the match completes, series records winner/loser/draw and updates previous-loser state for the next match.
+6. Draw-like completion clears previous-loser state, so the next match falls back to normal setup rules.
+
+### 13.3 Future SSH Match Flow
 
 1. `durakd` accepts an SSH session through Wish.
 2. SSH adapter maps the connection to a player identity.
@@ -260,7 +272,7 @@
 6. Match session serializes commands and mutates game state in order.
 7. Persistence adapter records events and final summaries once enabled.
 
-### 13.3 Future Match Completion Persistence Flow
+### 13.4 Future Match Completion Persistence Flow
 
 1. Domain core emits match-end event.
 2. Application layer builds match summary and requested rating/currency effects.
@@ -281,5 +293,6 @@
 - **Event schema evolution:** JSON envelope v1 now exists for public and internal streams; future persistence work must define migration/version handling for SQLite-backed history.
 - **Event-store failure semantics:** current session code keeps events pending when append fails, but durable persistence must explicitly choose retry/blocking, rollback, or command/event transaction behavior before daemon mode relies on it.
 - **Transfer rules:** default preset includes transfer behavior, but implementation can be phased after the base podkidnoy loop if needed.
+- **Series durability:** current series/table state is in memory only; daemon mode must persist series metadata and completed match summaries before supporting hosted consecutive tables.
 - **SSH concurrency:** multiplayer daemon must serialize per-match mutations; do not let multiple sessions mutate match state directly.
 - **Economy and rating:** rating/currency updates should be ledger-like and transactional when introduced.
