@@ -119,8 +119,9 @@
 - **API/event/schema strategy:**
   - In-process Go interfaces for MVP.
   - Application events include match id and sequence number around structured domain event payloads.
-  - Durable event serialization must add schema/version metadata before disk storage is introduced.
-  - Hidden-card data must be marked so future public replay/export can redact it.
+  - Stable serialized events use a JSON envelope: `schema_version`, `match_id`, `sequence`, `kind`, `visibility`, and `payload`.
+  - Current serialized events are `visibility=public`; future private events must be explicit rather than mixed into public replay data.
+  - Durable adapters may add record metadata such as insertion timestamp outside the envelope when a real store is introduced.
 - **Compatibility notes across parts:**
   - Domain core imports no adapter packages.
   - Adapters may depend inward on application/domain packages.
