@@ -57,15 +57,17 @@ go run ./cmd/durak -seed 42 -event-log .cache/events.jsonl -match-id demo-1
 omitted. In consecutive matches, the first match uses the base id and later
 matches append `-2`, `-3`, and so on.
 
-Run a headless simple-bot arena smoke with:
+Run a headless arena smoke with:
 
 ```sh
-go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500
+go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500 -p0 simple -p1 random
 ```
 
-Arena mode is a development tool for match stability checks. It currently runs
-`simple` vs `simple` through the application headless runner and can write public
-events with `-event-log` and `-match-id`.
+Arena mode is a development tool for match stability checks. It runs
+controllers through the application headless runner and can write public events
+with `-event-log` and `-match-id`. Available controllers are `simple` and
+`random`; `random` chooses uniformly from legal actions and does not evaluate
+the position.
 
 The Makefile keeps Go build caches under `.cache/` so commands work in
 restricted workspaces without writing to the user-level Go cache.
