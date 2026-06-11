@@ -81,6 +81,61 @@ func TestRunArenaWritesEventLog(t *testing.T) {
 	}
 }
 
+func TestRunHistoryReadsEventLog(t *testing.T) {
+	var arenaOut bytes.Buffer
+	var arenaErr bytes.Buffer
+	path := filepath.Join(t.TempDir(), "history.jsonl")
+
+	err := run(context.Background(), []string{
+		"arena",
+		"-matches", "2",
+		"-seed", "42",
+		"-event-log", path,
+		"-match-id", "history-test",
+	}, strings.NewReader(""), &arenaOut, &arenaErr)
+	if err != nil {
+		t.Fatalf("run arena returned error: %v; stderr=%q", err, arenaErr.String())
+	}
+
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	err = run(context.Background(), []string{
+		"history",
+		"-event-log", path,
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run history returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"History:",
+		"match=history-test ",
+		"match=history-test-2 ",
+		"status=complete",
+		"seats=[0,1]",
+		"rule=default",
+		"result=winner=",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestRunHistoryRequiresEventLog(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{"history"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run history returned nil error, want missing event log")
+	}
+	if !strings.Contains(err.Error(), "event-log is required") {
+		t.Fatalf("error = %v, want event-log error", err)
+	}
+}
+
 func TestRunArenaRejectsInvalidMatches(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer

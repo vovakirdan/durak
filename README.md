@@ -58,6 +58,12 @@ go run ./cmd/durak -seed 42 -event-log .cache/events.jsonl -match-id demo-1
 omitted. In consecutive matches, the first match uses the base id and later
 matches append `-2`, `-3`, and so on.
 
+List matches from a public JSONL log with:
+
+```sh
+go run ./cmd/durak history -event-log .cache/events.jsonl
+```
+
 Run a headless arena smoke with:
 
 ```sh
