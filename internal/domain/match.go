@@ -31,6 +31,14 @@ var (
 	ErrThrowInRankUnavailable = errors.New("throw-in rank unavailable")
 	// ErrAttackLimitReached means the current round cannot accept another attack card.
 	ErrAttackLimitReached = errors.New("attack limit reached")
+	// ErrTransferDisabled means the rule profile does not allow transfers.
+	ErrTransferDisabled = errors.New("transfer disabled")
+	// ErrTransferNotAllowed means transfer is blocked by a contextual rule.
+	ErrTransferNotAllowed = errors.New("transfer not allowed")
+	// ErrTransferRankUnavailable means the transfer card rank is absent from the table.
+	ErrTransferRankUnavailable = errors.New("transfer rank unavailable")
+	// ErrTransferAfterDefense means a player tried to transfer after defending a card.
+	ErrTransferAfterDefense = errors.New("transfer after defense")
 )
 
 // Seat identifies a player's place at the table.
@@ -77,6 +85,7 @@ type Match struct {
 	phase              MatchPhase
 	table              []TablePair
 	successfulDefenses int
+	roundsStarted      int
 	winner             Seat
 	loser              Seat
 }

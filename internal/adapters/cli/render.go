@@ -21,7 +21,7 @@ func newRenderer(humanSeat, botSeat domain.Seat) renderer {
 }
 
 func (renderer) writeHelp(out *output) {
-	out.println("Commands: number | a <card> | d [attack#] <card> | throw <card> | take | done | help | quit")
+	out.println("Commands: number | a <card> | d [attack#] <card> | throw <card> | tr <card> | take | done | help | quit")
 	out.println("Cards can be hand indexes or codes like 6C, 10D, AH.")
 }
 
@@ -143,6 +143,8 @@ func formatAction(action domain.Action) string {
 		return fmt.Sprintf("defend %d with %s", action.AttackIndex+1, action.Card)
 	case domain.ActionKindThrowIn:
 		return fmt.Sprintf("throw %s", action.Card)
+	case domain.ActionKindTransfer:
+		return fmt.Sprintf("transfer %s", action.Card)
 	case domain.ActionKindTake:
 		return "take"
 	case domain.ActionKindFinishDefense:

@@ -41,7 +41,7 @@ func (m *Match) legalDefenseActions(seat Seat) []Action {
 		return nil
 	}
 
-	actions := make([]Action, 0, len(m.hands[int(seat)])+1)
+	actions := make([]Action, 0, len(m.hands[int(seat)])*2+1)
 	for attackIndex, pair := range m.table {
 		if pair.Defended {
 			continue
@@ -57,6 +57,16 @@ func (m *Match) legalDefenseActions(seat Seat) []Action {
 				AttackIndex: attackIndex,
 			})
 		}
+	}
+	for _, card := range m.hands[int(seat)] {
+		if m.validateTransfer(seat, card) != nil {
+			continue
+		}
+		actions = append(actions, Action{
+			Kind: ActionKindTransfer,
+			Seat: seat,
+			Card: card,
+		})
 	}
 	actions = append(actions, Action{Kind: ActionKindTake, Seat: seat})
 	return actions

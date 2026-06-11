@@ -74,6 +74,26 @@ func TestSimpleStrategyThrowsInBeforeFinishingDefense(t *testing.T) {
 	}
 }
 
+func TestSimpleStrategyTransfersBeforeTaking(t *testing.T) {
+	strategy := bot.NewSimpleStrategy()
+	transfer := domain.Card{Rank: domain.Seven, Suit: domain.Clubs}
+	decision := app.DecisionContext{
+		SeatView: app.SeatView{TrumpSuit: domain.Hearts},
+		LegalActions: []domain.Action{
+			{Kind: domain.ActionKindTake, Seat: domain.Seat(1)},
+			{Kind: domain.ActionKindTransfer, Seat: domain.Seat(1), Card: transfer},
+		},
+	}
+
+	action, err := strategy.ChooseAction(context.Background(), &decision)
+	if err != nil {
+		t.Fatalf("ChooseAction returned error: %v", err)
+	}
+	if action.Kind != domain.ActionKindTransfer || action.Card != transfer {
+		t.Fatalf("action = %v, want transfer", action)
+	}
+}
+
 func TestSimpleStrategyReturnsNoLegalAction(t *testing.T) {
 	_, err := bot.NewSimpleStrategy().ChooseAction(context.Background(), &app.DecisionContext{})
 	if !errors.Is(err, bot.ErrNoLegalAction) {

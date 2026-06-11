@@ -18,6 +18,8 @@ const (
 	ActionKindFinishDefense
 	// ActionKindFinishTake completes taking cards after optional throw-ins.
 	ActionKindFinishTake
+	// ActionKindTransfer passes the current defense to the previous attacker.
+	ActionKindTransfer
 )
 
 // Action is a validated command candidate for a player seat.
@@ -43,6 +45,8 @@ func (m *Match) ApplyAction(action Action) error {
 		return m.FinishDefense(action.Seat)
 	case ActionKindFinishTake:
 		return m.FinishTake(action.Seat)
+	case ActionKindTransfer:
+		return m.Transfer(action.Seat, action.Card)
 	default:
 		return ErrInvalidAction
 	}

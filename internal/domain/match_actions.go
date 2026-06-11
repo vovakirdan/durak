@@ -16,6 +16,7 @@ func (m *Match) Attack(seat Seat, card Card) error {
 	if err := m.addAttackCard(seat, card); err != nil {
 		return err
 	}
+	m.roundsStarted++
 	m.phase = MatchPhaseDefense
 	return nil
 }
@@ -66,6 +67,19 @@ func (m *Match) ThrowIn(seat Seat, card Card) error {
 	if m.phase == MatchPhaseThrowIn {
 		m.phase = MatchPhaseDefense
 	}
+	return nil
+}
+
+// Transfer adds a same-rank card and makes the previous attacker defend.
+func (m *Match) Transfer(seat Seat, card Card) error {
+	if err := m.validateTransfer(seat, card); err != nil {
+		return err
+	}
+
+	if err := m.addAttackCard(seat, card); err != nil {
+		return err
+	}
+	m.attacker, m.defender = m.defender, m.attacker
 	return nil
 }
 
@@ -177,6 +191,37 @@ func (m *Match) validateThrowIn(seat Seat, card Card) error {
 	return nil
 }
 
+func (m *Match) validateTransfer(seat Seat, card Card) error {
+	if err := m.requireInProgress(); err != nil {
+		return err
+	}
+	if !m.profile.TransferEnabled {
+		return ErrTransferDisabled
+	}
+	if m.phase != MatchPhaseDefense {
+		return fmt.Errorf("%w: transfer requires defense phase", ErrInvalidPhase)
+	}
+	if seat != m.defender {
+		return fmt.Errorf("%w: defender is %d", ErrNotPlayersTurn, m.defender)
+	}
+	if !m.profile.FirstAttackTransferAllowed && m.roundsStarted == 1 {
+		return fmt.Errorf("%w: first attack cannot be transferred", ErrTransferNotAllowed)
+	}
+	if m.hasDefendedTableCards() {
+		return ErrTransferAfterDefense
+	}
+	if !m.hasCard(seat, card) {
+		return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
+	}
+	if !m.rankOnTable(card.Rank) {
+		return fmt.Errorf("%w: %s", ErrTransferRankUnavailable, card)
+	}
+	if !m.canAddSuccessfulDefenseAttack() {
+		return fmt.Errorf("%w: first successful defense attack limit is %d", ErrAttackLimitReached, m.firstSuccessfulDefenseLimit())
+	}
+	return nil
+}
+
 func (m *Match) addAttackCard(seat Seat, card Card) error {
 	if err := m.removeFromHand(seat, card); err != nil {
 		return err
@@ -214,6 +259,15 @@ func (m *Match) allAttacksDefended() bool {
 		}
 	}
 	return true
+}
+
+func (m *Match) hasDefendedTableCards() bool {
+	for _, pair := range m.table {
+		if pair.Defended {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Match) rankOnTable(rank Rank) bool {

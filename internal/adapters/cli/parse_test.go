@@ -65,6 +65,24 @@ func TestParseCommandParsesDefendByAttackNumberAndCardCode(t *testing.T) {
 	}
 }
 
+func TestParseCommandParsesTransferByCardCode(t *testing.T) {
+	card := domain.Card{Rank: domain.Seven, Suit: domain.Clubs}
+	decision := app.DecisionContext{
+		Hand: []domain.Card{card},
+		LegalActions: []domain.Action{
+			{Kind: domain.ActionKindTransfer, Seat: defaultHumanSeat, Card: card},
+		},
+	}
+
+	command, err := parseCommand("tr 7c", &decision)
+	if err != nil {
+		t.Fatalf("parseCommand returned error: %v", err)
+	}
+	if command.action.Kind != domain.ActionKindTransfer || command.action.Card != card {
+		t.Fatalf("action = %+v, want transfer with %v", command.action, card)
+	}
+}
+
 func TestParseCommandParsesFinishTake(t *testing.T) {
 	action := domain.Action{Kind: domain.ActionKindFinishTake, Seat: defaultHumanSeat}
 	decision := app.DecisionContext{LegalActions: []domain.Action{action}}

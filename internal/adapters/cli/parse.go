@@ -46,6 +46,8 @@ func parseCommand(input string, decision *app.DecisionContext) (parsedCommand, e
 		return parseCardAction(domain.ActionKindAttack, fields[1:], decision)
 	case "throw", "th", "add":
 		return parseCardAction(domain.ActionKindThrowIn, fields[1:], decision)
+	case "tr", "transfer":
+		return parseCardAction(domain.ActionKindTransfer, fields[1:], decision)
 	case "d", "defend":
 		return parseDefendAction(fields[1:], decision)
 	case "t", "take":

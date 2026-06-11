@@ -22,6 +22,7 @@ CLI commands:
 - `a <card>` attacks with a card.
 - `d [attack#] <card>` defends an attack.
 - `throw <card>` throws in a legal card.
+- `tr <card>` transfers an attack with a same-rank card.
 - `take` takes cards.
 - `done` finishes a defense or pickup.
 - `help` prints commands.
