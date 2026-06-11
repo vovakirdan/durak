@@ -27,6 +27,8 @@ type RunOptions struct {
 	Profile     domain.RuleProfile
 	Deal        domain.DealOptions
 	Strategy    app.Strategy
+	MatchID     app.MatchID
+	EventStore  app.EventStore
 }
 
 // RunWithOptions starts the local CLI adapter.
@@ -36,7 +38,10 @@ func RunWithOptions(ctx context.Context, in io.Reader, out io.Writer, options *R
 		return ErrMissingStrategy
 	}
 
-	session, _, err := app.NewDealtSession(runOptions.PlayerCount, runOptions.Profile, runOptions.Deal)
+	session, _, err := app.NewDealtSessionWithOptions(ctx, runOptions.PlayerCount, runOptions.Profile, runOptions.Deal, app.SessionOptions{
+		MatchID:    runOptions.MatchID,
+		EventStore: runOptions.EventStore,
+	})
 	if err != nil {
 		return err
 	}

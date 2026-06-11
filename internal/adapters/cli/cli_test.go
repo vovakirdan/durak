@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -75,6 +76,39 @@ func TestRunWithOptionsUsesDeterministicDeal(t *testing.T) {
 	}
 }
 
+func TestRunWithOptionsEmitsInitialEventsToStore(t *testing.T) {
+	store := app.NewInMemoryEventStore()
+	var out bytes.Buffer
+
+	err := RunWithOptions(context.Background(), strings.NewReader("q\n"), &out, &RunOptions{
+		MatchID:    "cli-test-match",
+		EventStore: store,
+		Strategy:   firstLegalStrategy(),
+	})
+	if err != nil {
+		t.Fatalf("RunWithOptions returned error: %v", err)
+	}
+
+	events := store.Events()
+	if len(events) < 2 {
+		t.Fatalf("stored %d events, want at least initial events", len(events))
+	}
+	if events[0].Domain.Kind != domain.EventKindMatchStarted {
+		t.Fatalf("first event = %v, want match started", events[0].Domain.Kind)
+	}
+	if events[1].Domain.Kind != domain.EventKindDeal {
+		t.Fatalf("second event = %v, want deal", events[1].Domain.Kind)
+	}
+	for i, event := range events {
+		if event.MatchID != "cli-test-match" {
+			t.Fatalf("event %d match id = %q, want cli-test-match", i, event.MatchID)
+		}
+		if event.Sequence != uint64(i+1) {
+			t.Fatalf("event %d sequence = %d, want %d", i, event.Sequence, i+1)
+		}
+	}
+}
+
 func TestGameCompletesScriptedRound(t *testing.T) {
 	session := mustCLISession(t, domain.InitialDeal{
 		Hands: [][]domain.Card{
@@ -139,6 +173,18 @@ func TestRunWithOptionsRejectsMissingStrategy(t *testing.T) {
 	err := RunWithOptions(context.Background(), strings.NewReader("q\n"), &out, &RunOptions{})
 	if err == nil {
 		t.Fatal("RunWithOptions returned nil error, want missing strategy")
+	}
+}
+
+func TestRunWithOptionsRejectsEventStoreWithoutMatchID(t *testing.T) {
+	var out bytes.Buffer
+
+	err := RunWithOptions(context.Background(), strings.NewReader("q\n"), &out, &RunOptions{
+		EventStore: app.NewInMemoryEventStore(),
+		Strategy:   firstLegalStrategy(),
+	})
+	if !errors.Is(err, app.ErrEmptyMatchID) {
+		t.Fatalf("RunWithOptions error = %v, want ErrEmptyMatchID", err)
 	}
 }
 

@@ -43,6 +43,15 @@ Run a replayable CLI deal with:
 go run ./cmd/durak -seed 42
 ```
 
+Append public match events to a local JSONL log with:
+
+```sh
+go run ./cmd/durak -seed 42 -event-log .cache/events.jsonl -match-id demo-1
+```
+
+`-match-id` is optional when `-event-log` is set; the CLI generates one if it is
+omitted.
+
 The Makefile keeps Go build caches under `.cache/` so commands work in
 restricted workspaces without writing to the user-level Go cache.
 
