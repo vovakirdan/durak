@@ -49,18 +49,35 @@ go run ./cmd/durak -seed 42 -bot simple -rules default
 ```
 
 Available player controllers for the opponent are `simple`, `random`,
-`ai-raw-mock`, and `ai-raw-exec`. The AI mock is a deterministic local tester
-that returns raw text commands through the shared parser. `ai-raw-exec` writes
-a JSON turn prompt to an external process stdin and reads the first non-empty
-stdout line as the chosen command. The only rule preset currently exposed
-through CLI flags is `default`; external rule config is also a future
-milestone.
+`ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The AI mock is a deterministic
+local tester that returns raw text commands through the shared parser.
+`ai-openai` calls an OpenAI-compatible `/chat/completions` endpoint directly
+through the official Go SDK. `ai-raw-exec` is still available for local wrapper
+experiments. The only rule preset currently exposed through CLI flags is
+`default`; external rule config is also a future milestone.
 
-Run against an external raw-command AI wrapper with:
+Run against an OpenAI-compatible endpoint with:
 
 ```sh
-go run ./cmd/durak -seed 42 -bot ai-raw-exec -ai-command ./durak-ai
+DURAK_AI_API_KEY=... go run ./cmd/durak \
+  -seed 42 \
+  -bot ai-openai \
+  -ai-model gpt-4o-mini
 ```
+
+For OpenAI-compatible proxies such as LiteLLM, OpenRouter, vLLM, or Ollama
+compatible servers, set the base URL as well:
+
+```sh
+DURAK_AI_API_KEY=local go run ./cmd/durak \
+  -bot ai-openai \
+  -ai-base-url http://127.0.0.1:11434/v1 \
+  -ai-model llama3.1
+```
+
+AI config can also come from `DURAK_AI_BASE_URL`, `DURAK_AI_API_KEY`, and
+`DURAK_AI_MODEL` (`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` are
+accepted as fallbacks).
 
 Append public match events to a local JSONL log with:
 
@@ -87,12 +104,11 @@ go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500 -p0 simple -p1 r
 Arena mode is a development tool for match stability checks. It runs
 controllers through the application headless runner and can write public events
 with `-event-log` and `-match-id`. Available controllers are `simple`,
-`random`, `ai-raw-mock`, and `ai-raw-exec`; `random` chooses uniformly from
-legal actions and does not evaluate the position, while `ai-raw-mock`
-intentionally exercises raw command parsing and then retries with legal text
-commands. `ai-raw-exec` uses the same JSON/stdin and command/stdout protocol as
-CLI play. Arena uses `-rules default` unless another supported preset is
-provided later.
+`random`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`; `random` chooses
+uniformly from legal actions and does not evaluate the position, while
+`ai-raw-mock` intentionally exercises raw command parsing and then retries with
+legal text commands. Arena uses `-rules default` unless another supported
+preset is provided later.
 
 External raw AI processes receive a JSON object containing visible state,
 private hand, legal command hints, and previous parse errors. They should print

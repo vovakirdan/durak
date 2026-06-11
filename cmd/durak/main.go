@@ -37,7 +37,7 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	var seed seedFlag
 	var eventLogPath string
 	var matchID string
-	rawAI := newRawAIFlags()
+	aiConfig := newAIFlags()
 	botName := normalizePlayerControllerKind("")
 	rulesName := defaultRulesPreset
 	flags := flag.NewFlagSet("durak", flag.ContinueOnError)
@@ -47,7 +47,7 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	flags.StringVar(&rulesName, "rules", rulesName, "rule preset: default")
 	flags.StringVar(&eventLogPath, "event-log", "", "append public match events to a JSONL file")
 	flags.StringVar(&matchID, "match-id", "", "base match id for event log; generated when omitted")
-	rawAI.bind(flags)
+	aiConfig.bind(flags)
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -59,7 +59,7 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	if err != nil {
 		return err
 	}
-	rawAIClient, err := rawAI.client()
+	aiClient, err := aiConfig.clientForKind(botName)
 	if err != nil {
 		return err
 	}
@@ -69,7 +69,7 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		Seeded:   seed.set,
 		Seat:     domain.Seat(1),
 		Fallback: simpleFallbackController(),
-		RawAI:    rawAIClient,
+		AI:       aiClient,
 	})
 	if err != nil {
 		return err

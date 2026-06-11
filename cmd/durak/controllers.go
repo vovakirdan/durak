@@ -14,11 +14,12 @@ import (
 const (
 	controllerAIRawMock = "ai-raw-mock"
 	controllerAIRawExec = "ai-raw-exec"
+	controllerAIOpenAI  = "ai-openai"
 )
 
 var (
 	errUnknownPlayerController = errors.New("unknown player controller")
-	errMissingRawAIClient      = errors.New("missing raw ai client")
+	errMissingAIClient         = errors.New("missing ai client")
 	errNilPlayerController     = errors.New("nil player controller config")
 )
 
@@ -29,7 +30,7 @@ type playerControllerConfig struct {
 	Seat      domain.Seat
 	Fallback  app.PlayerController
 	TraceSink ai.RawCommandTraceSink
-	RawAI     ai.Client
+	AI        ai.Client
 }
 
 func controllerNames() string {
@@ -38,6 +39,7 @@ func controllerNames() string {
 		bot.ControllerRandom,
 		controllerAIRawMock,
 		controllerAIRawExec,
+		controllerAIOpenAI,
 	}, ", ")
 }
 
@@ -61,11 +63,21 @@ func newPlayerController(config *playerControllerConfig) (app.PlayerController, 
 			TraceSink:   config.TraceSink,
 		})
 	case controllerAIRawExec:
-		if config.RawAI == nil {
-			return nil, fmt.Errorf("%w: %s requires -ai-command", errMissingRawAIClient, kind)
+		if config.AI == nil {
+			return nil, fmt.Errorf("%w: %s requires -ai-command", errMissingAIClient, kind)
 		}
 		return ai.NewRawCommandController(ai.RawCommandControllerOptions{
-			Client:      config.RawAI,
+			Client:      config.AI,
+			MaxAttempts: 2,
+			Fallback:    config.Fallback,
+			TraceSink:   config.TraceSink,
+		})
+	case controllerAIOpenAI:
+		if config.AI == nil {
+			return nil, fmt.Errorf("%w: %s requires -ai-model", errMissingAIClient, kind)
+		}
+		return ai.NewRawCommandController(ai.RawCommandControllerOptions{
+			Client:      config.AI,
 			MaxAttempts: 2,
 			Fallback:    config.Fallback,
 			TraceSink:   config.TraceSink,
@@ -81,7 +93,7 @@ func simpleFallbackController() app.PlayerController {
 
 func validatePlayerControllerKind(kind string) error {
 	switch normalizePlayerControllerKind(kind) {
-	case bot.ControllerSimple, bot.ControllerRandom, controllerAIRawMock, controllerAIRawExec:
+	case bot.ControllerSimple, bot.ControllerRandom, controllerAIRawMock, controllerAIRawExec, controllerAIOpenAI:
 		return nil
 	default:
 		return fmt.Errorf("%w: %q", errUnknownPlayerController, kind)

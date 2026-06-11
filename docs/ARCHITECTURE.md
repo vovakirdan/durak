@@ -47,7 +47,7 @@
 
 - **Type:** headless player-controller adapter.
 - **Primary responsibilities:** build a seat-scoped prompt, ask an AI-like client for a text command, parse that command through the shared text command adapter, and return a normal player decision.
-- **Internal structure:** prompt builder, provider-neutral AI client port, raw command controller, optional subprocess client, and trace records for raw response and parse result.
+- **Internal structure:** prompt builder, provider-neutral AI client port, raw command controller, OpenAI-compatible HTTP client, optional subprocess client, and trace records for raw response and parse result.
 - **Key dependencies:** application/session layer and text command adapter. It must not call CLI render loops or mutate sessions directly.
 
 ### Future Bubble Tea TUI
@@ -114,9 +114,10 @@
   - provider-neutral `Client` interface.
   - raw-command prompt/response models.
   - raw command controller for parser and validation stress tests.
+  - OpenAI-compatible chat-completions client using the official OpenAI Go SDK.
   - subprocess raw-command client for local wrapper scripts or external LLM CLIs.
   - future structured AI controller that selects action IDs or decisions directly.
-- **Key dependencies:** application/session types, domain value types, text command parsing, and standard-library process execution for local wrappers. Provider SDKs must stay behind this adapter when introduced.
+- **Key dependencies:** application/session types, domain value types, text command parsing, the official OpenAI Go SDK for compatible HTTP endpoints, and standard-library process execution for local wrappers. Provider SDKs must stay behind this adapter when introduced.
 - **Why this boundary exists:** AI players should be replaceable and observable without coupling the game core or CLI/TUI loops to model providers.
 
 ### Persistence Layer
@@ -315,10 +316,15 @@
 5. Parser errors, non-player commands, or illegal choices are returned as controller errors and recorded in controller trace for diagnostics.
 6. Valid action or concession commands become `PlayerDecision` values and continue through `Session.ApplyPlayerDecision`.
 
+For `ai-openai`, the client serializes the provider-neutral prompt into a chat
+completion request and sends it to the configured OpenAI-compatible base URL
+with the configured model and API key. The response text is still parsed through
+the same raw command controller.
+
 For `ai-raw-exec`, the client serializes a provider-neutral prompt as JSON to
 the external process stdin and treats the first non-empty stdout line as the raw
-command. The wrapper process owns any provider-specific prompt, credential, or
-network behavior.
+command. This path is a debug/local-wrapper escape hatch, not the primary AI
+provider integration.
 
 ### 13.5 Future SSH Match Flow
 

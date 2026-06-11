@@ -60,14 +60,15 @@
 - **Data access approach:** no direct storage access; emits events through an interface.
 - **Why this choice fits:** game correctness should not depend on CLI, TUI, SSH, storage, or bot implementation details.
 
-### Bot Strategy Runtime
+### Bot and AI Runtime
 
 - **Responsibility:** choose legal actions for bot-controlled seats.
 - **Language/runtime:** Go.
-- **Framework/approach:** strategy interface with simple deterministic implementations first.
+- **Framework/approach:** strategy interface with simple deterministic implementations first, plus a provider-neutral AI adapter for raw-command model responses.
+- **AI provider library:** official `github.com/openai/openai-go/v3` SDK for OpenAI-compatible chat-completions endpoints.
 - **Validation/contracts:** bot receives read-only decision context and returns an action that the game core validates.
 - **Data access approach:** no storage access in the first implementation; future strategies may consume historical summaries through explicit ports.
-- **Why this choice fits:** supports simple bots now and future DSL/AI strategies without giving bots mutable engine internals.
+- **Why this choice fits:** supports simple bots now and future DSL/AI strategies without giving bots mutable engine internals. The OpenAI-compatible API shape covers OpenAI, OpenRouter, LiteLLM, vLLM/Ollama-compatible servers, and similar providers without binding the game to one CLI helper transport.
 
 ### Future Daemon
 
@@ -104,7 +105,7 @@
 
 - **Need for jobs/workflows/agents:** none in the first playable CLI.
 - **Chosen approach:** explicit Go interfaces for future strategy engines and AI adapters.
-- **Technology:** simple in-process algorithmic strategies first; future AI adapter over HTTP or local process boundary after bot evaluation requirements are known.
+- **Technology:** simple in-process algorithmic strategies, OpenAI-compatible HTTP adapter through `openai-go`, and a local subprocess escape hatch for debugging.
 - **Why this choice fits:** it keeps the game loop deterministic and testable while leaving room for DSL and AI decision-making later.
 
 ## 8. Observability and Operations
@@ -135,6 +136,7 @@
 - `modernc.org/sqlite` is a CGo-free SQLite driver candidate; `github.com/mattn/go-sqlite3` is mature and `database/sql` compatible but requires CGO/GCC: https://pkg.go.dev/modernc.org/sqlite and https://github.com/mattn/go-sqlite3
 - `log/slog` provides standard structured logging with pluggable handlers; zap and zerolog remain candidates if daemon performance or handler features require them: https://pkg.go.dev/log/slog, https://github.com/uber-go/zap, and https://github.com/rs/zerolog
 - Goose and golang-migrate are both viable Go migration candidates; defer the choice until there is an actual SQLite schema to evolve: https://github.com/pressly/goose and https://github.com/golang-migrate/migrate
+- The official OpenAI Go SDK supports `option.WithBaseURL` and `option.WithAPIKey`, which is the smallest maintained path to OpenAI-compatible providers: https://github.com/openai/openai-go
 
 ## 11. Rejected Alternatives
 

@@ -126,8 +126,9 @@ Status: Approved.
 - **Mandatory:** AI adapters must not import CLI loop/rendering packages or mutate sessions directly.
 - **Mandatory:** Raw AI responses must be parsed or validated before becoming `PlayerDecision` values.
 - **Mandatory:** Provider SDKs, credentials, prompts, and transport details must stay out of domain and application packages.
+- **Mandatory:** OpenAI-compatible HTTP providers must be configured through explicit base URL, model, and API key settings; secrets should come from environment variables in normal use.
 - **Mandatory:** External-process AI wrappers must communicate through explicit stdin/stdout protocols and must not receive mutable session handles.
-- **Default:** Start with mock/local AI clients before adding network providers.
+- **Default:** Prefer OpenAI-compatible HTTP providers over CLI helper transports for playable AI opponents.
 - **Review trigger:** A real AI provider integration requires timeout, retry, redaction, and secret-handling review.
 
 ### Future TUI Adapter

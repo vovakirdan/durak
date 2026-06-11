@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -105,6 +107,37 @@ func TestRunArenaAcceptsRawExecAIController(t *testing.T) {
 	output := out.String()
 	for _, want := range []string{
 		"Arena: seat0=simple seat1=ai-raw-exec",
+		"Matches: 1",
+		"Raw AI: attempts=",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestRunArenaAcceptsOpenAIController(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	server := newOpenAICommandServer(t, "1")
+
+	err := run(t.Context(), []string{
+		"arena",
+		"-matches", "1",
+		"-seed", "42",
+		"-max-actions", "800",
+		"-p0", "simple",
+		"-p1", "ai-openai",
+		"-ai-base-url", server.URL + "/v1",
+		"-ai-model", "test-model",
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run arena returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"Arena: seat0=simple seat1=ai-openai",
 		"Matches: 1",
 		"Raw AI: attempts=",
 	} {
@@ -258,6 +291,25 @@ func TestRunPlayAcceptsRawExecAIController(t *testing.T) {
 	}
 }
 
+func TestRunPlayAcceptsOpenAIController(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	server := newOpenAICommandServer(t, "1")
+
+	err := run(t.Context(), []string{
+		"-seed", "42",
+		"-bot", "ai-openai",
+		"-ai-base-url", server.URL + "/v1",
+		"-ai-model", "test-model",
+	}, strings.NewReader("q\n"), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run play returned error: %v; stderr=%q", err, errOut.String())
+	}
+	if !strings.Contains(out.String(), "Durak CLI") {
+		t.Fatalf("output = %q, want CLI header", out.String())
+	}
+}
+
 func TestRunPlayRequiresRawExecAICommand(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -268,6 +320,22 @@ func TestRunPlayRequiresRawExecAICommand(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "ai-raw-exec requires -ai-command") {
 		t.Fatalf("error = %v, want missing AI command error", err)
+	}
+}
+
+func TestRunPlayRequiresOpenAIModel(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(t.Context(), []string{
+		"-bot", "ai-openai",
+		"-ai-base-url", "http://127.0.0.1:11434/v1",
+	}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run play returned nil error, want missing AI model")
+	}
+	if !strings.Contains(err.Error(), "missing openai-compatible model") {
+		t.Fatalf("error = %v, want missing model error", err)
 	}
 }
 
@@ -304,4 +372,23 @@ func writeTestExecutable(t *testing.T, contents string) string {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
 	return path
+}
+
+func newOpenAICommandServer(t *testing.T, command string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("path = %q, want /v1/chat/completions", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id":"chatcmpl-test",
+			"object":"chat.completion",
+			"created":1,
+			"model":"test-model",
+			"choices":[{"index":0,"message":{"role":"assistant","content":"` + command + `"},"finish_reason":"stop"}]
+		}`))
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
