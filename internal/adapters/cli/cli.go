@@ -4,14 +4,25 @@ package cli
 
 import (
 	"context"
-	"fmt"
 	"io"
+
+	"github.com/vovakirdan/durak/internal/adapters/bot"
+	"github.com/vovakirdan/durak/internal/app"
+	"github.com/vovakirdan/durak/internal/domain"
+)
+
+const (
+	humanSeat = domain.Seat(0)
+	botSeat   = domain.Seat(1)
 )
 
 // Run starts the local CLI adapter.
 func Run(ctx context.Context, in io.Reader, out io.Writer) error {
-	_ = ctx
-	_ = in
-	_, err := fmt.Fprintln(out, "Durak CLI bootstrap: game loop is not implemented yet.")
-	return err
+	session, _, err := app.NewDealtSession(2, domain.DefaultRuleProfile(), domain.DealOptions{})
+	if err != nil {
+		return err
+	}
+
+	game := newGame(session, bot.NewSimpleStrategy(), in, out)
+	return game.run(ctx)
 }
