@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 
@@ -17,13 +18,34 @@ import (
 )
 
 func main() {
+	if err := run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr); err != nil {
+		fmt.Fprintf(os.Stderr, "durak: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) error {
+	if len(args) > 0 && args[0] == "arena" {
+		return runArena(ctx, args[1:], out, errOut)
+	}
+	return runPlay(ctx, args, in, out, errOut)
+}
+
+func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) error {
 	var seed seedFlag
 	var eventLogPath string
 	var matchID string
-	flag.Var(&seed, "seed", "deterministic deal seed for replayable games")
-	flag.StringVar(&eventLogPath, "event-log", "", "append public match events to a JSONL file")
-	flag.StringVar(&matchID, "match-id", "", "base match id for event log; generated when omitted")
-	flag.Parse()
+	flags := flag.NewFlagSet("durak", flag.ContinueOnError)
+	flags.SetOutput(errOut)
+	flags.Var(&seed, "seed", "deterministic deal seed for replayable games")
+	flags.StringVar(&eventLogPath, "event-log", "", "append public match events to a JSONL file")
+	flags.StringVar(&matchID, "match-id", "", "base match id for event log; generated when omitted")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unknown argument %q", flags.Arg(0))
+	}
 
 	options := cli.RunOptions{
 		Strategy: bot.NewSimpleStrategy(),
@@ -34,14 +56,12 @@ func main() {
 	if eventLogPath != "" {
 		store, err := storage.NewJSONLEventStore(eventLogPath)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "durak: %v\n", err)
-			os.Exit(1)
+			return err
 		}
 		if matchID == "" {
 			generatedID, err := newMatchID()
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "durak: %v\n", err)
-				os.Exit(1)
+				return err
 			}
 			matchID = string(generatedID)
 		}
@@ -49,10 +69,7 @@ func main() {
 		options.MatchID = app.MatchID(matchID)
 	}
 
-	if err := cli.RunWithOptions(context.Background(), os.Stdin, os.Stdout, &options); err != nil {
-		fmt.Fprintf(os.Stderr, "durak: %v\n", err)
-		os.Exit(1)
-	}
+	return cli.RunWithOptions(ctx, in, out, &options)
 }
 
 type seedFlag struct {
