@@ -22,7 +22,7 @@ func main() {
 	var matchID string
 	flag.Var(&seed, "seed", "deterministic deal seed for replayable games")
 	flag.StringVar(&eventLogPath, "event-log", "", "append public match events to a JSONL file")
-	flag.StringVar(&matchID, "match-id", "", "match id for event log; generated when omitted")
+	flag.StringVar(&matchID, "match-id", "", "base match id for event log; generated when omitted")
 	flag.Parse()
 
 	options := cli.RunOptions{

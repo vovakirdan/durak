@@ -31,24 +31,7 @@ func TestRunWithOptionsStartsAndQuits(t *testing.T) {
 }
 
 func TestRunWithOptionsUsesDeterministicDeal(t *testing.T) {
-	hands := [][]domain.Card{
-		{
-			{Rank: domain.Six, Suit: domain.Clubs},
-			{Rank: domain.Seven, Suit: domain.Hearts},
-			{Rank: domain.Eight, Suit: domain.Diamonds},
-			{Rank: domain.Nine, Suit: domain.Spades},
-			{Rank: domain.Ten, Suit: domain.Clubs},
-			{Rank: domain.Jack, Suit: domain.Diamonds},
-		},
-		{
-			{Rank: domain.Queen, Suit: domain.Clubs},
-			{Rank: domain.Ten, Suit: domain.Hearts},
-			{Rank: domain.Ace, Suit: domain.Clubs},
-			{Rank: domain.Six, Suit: domain.Diamonds},
-			{Rank: domain.Seven, Suit: domain.Spades},
-			{Rank: domain.Eight, Suit: domain.Spades},
-		},
-	}
+	hands := cliSeriesHands()
 	deck := testDeckForDeal(hands, testStockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, hands...))
 	var out bytes.Buffer
 
@@ -106,6 +89,44 @@ func TestRunWithOptionsEmitsInitialEventsToStore(t *testing.T) {
 		if event.Sequence != uint64(i+1) {
 			t.Fatalf("event %d sequence = %d, want %d", i, event.Sequence, i+1)
 		}
+	}
+}
+
+func TestRunWithOptionsStartsNextSeriesMatch(t *testing.T) {
+	store := app.NewInMemoryEventStore()
+	hands := cliSeriesHands()
+	deck := testDeckForDeal(hands, testStockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, hands...))
+	var out bytes.Buffer
+
+	err := RunWithOptions(context.Background(), strings.NewReader("concede\n\nq\n"), &out, &RunOptions{
+		Deal: domain.DealOptions{
+			Shuffler: domain.ShuffleFunc(func(cards []domain.Card) {
+				copy(cards, deck)
+			}),
+		},
+		MatchID:    "series-match",
+		EventStore: store,
+		Strategy:   firstLegalStrategy(),
+	})
+	if err != nil {
+		t.Fatalf("RunWithOptions returned error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "Starting match #2.") {
+		t.Fatalf("output = %q, want second match banner", output)
+	}
+	firstEvents := store.EventsForMatch("series-match")
+	secondEvents := store.EventsForMatch("series-match-2")
+	if len(firstEvents) == 0 || len(secondEvents) < 2 {
+		t.Fatalf("stored first=%d second=%d events, want both match streams", len(firstEvents), len(secondEvents))
+	}
+	deal := secondEvents[1].Domain.Deal
+	if deal == nil {
+		t.Fatalf("second event = %+v, want deal", secondEvents[1])
+	}
+	if deal.FirstAttacker != domain.Seat(1) {
+		t.Fatalf("second first attacker = %d, want bot seat before previous loser", deal.FirstAttacker)
 	}
 }
 
@@ -245,4 +266,25 @@ func testStockWithBottom(bottom domain.Card, hands ...[]domain.Card) []domain.Ca
 		}
 	}
 	return append(stock, bottom)
+}
+
+func cliSeriesHands() [][]domain.Card {
+	return [][]domain.Card{
+		{
+			{Rank: domain.Six, Suit: domain.Clubs},
+			{Rank: domain.Seven, Suit: domain.Hearts},
+			{Rank: domain.Eight, Suit: domain.Diamonds},
+			{Rank: domain.Nine, Suit: domain.Spades},
+			{Rank: domain.Ten, Suit: domain.Clubs},
+			{Rank: domain.Jack, Suit: domain.Diamonds},
+		},
+		{
+			{Rank: domain.Queen, Suit: domain.Clubs},
+			{Rank: domain.Ten, Suit: domain.Hearts},
+			{Rank: domain.Ace, Suit: domain.Clubs},
+			{Rank: domain.Six, Suit: domain.Diamonds},
+			{Rank: domain.Seven, Suit: domain.Spades},
+			{Rank: domain.Eight, Suit: domain.Spades},
+		},
+	}
 }

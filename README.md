@@ -14,7 +14,8 @@ Implemented core pieces:
 - Two-player match state machine with attack, defense, throw-in, transfer, take,
   refill, and match completion.
 - Application session layer, in-memory event recorder, and a simple bot strategy.
-- CLI commands by action number or short commands.
+- CLI commands by action number or short commands, with consecutive matches in
+  one local series.
 
 CLI commands:
 
@@ -28,6 +29,9 @@ CLI commands:
 - `concede` gives up the current match.
 - `help` prints commands.
 - `quit` exits.
+
+After a result, press Enter or type `next` to start another match. In a series,
+the next match starts before the previous match loser.
 
 ## Development
 
@@ -50,7 +54,8 @@ go run ./cmd/durak -seed 42 -event-log .cache/events.jsonl -match-id demo-1
 ```
 
 `-match-id` is optional when `-event-log` is set; the CLI generates one if it is
-omitted.
+omitted. In consecutive matches, the first match uses the base id and later
+matches append `-2`, `-3`, and so on.
 
 The Makefile keeps Go build caches under `.cache/` so commands work in
 restricted workspaces without writing to the user-level Go cache.

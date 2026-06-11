@@ -23,6 +23,7 @@ func newRenderer(humanSeat, botSeat domain.Seat) renderer {
 func (renderer) writeHelp(out *output) {
 	out.println("Commands: number | a <card> | d [attack#] <card> | throw <card> | tr <card> | take | done | concede | help | quit")
 	out.println("Cards can be hand indexes or codes like 6C, 10D, AH.")
+	out.println("After a result, press Enter or type next to start another match.")
 }
 
 func (r renderer) writeState(out *output, decision *app.DecisionContext) {
