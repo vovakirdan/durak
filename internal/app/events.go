@@ -158,6 +158,23 @@ func (e *InternalDealEvent) PublicDeal() domain.DealEvent {
 	}
 }
 
+// InitialDeal derives the full domain setup state from a canonical deal event.
+func (e *InternalDealEvent) InitialDeal() domain.InitialDeal {
+	if e == nil {
+		return domain.InitialDeal{}
+	}
+	return domain.InitialDeal{
+		Hands:               cloneHands(e.Hands),
+		Stock:               slices.Clone(e.Stock),
+		TrumpIndicator:      e.TrumpIndicator,
+		TrumpSuit:           e.TrumpSuit,
+		FirstAttacker:       int(e.FirstAttacker),
+		Redeals:             e.Redeals,
+		TrumpReselections:   e.TrumpReselections,
+		RandomFirstAttacker: e.RandomFirstAttacker,
+	}
+}
+
 func cloneEvent(e *Event) Event {
 	if e == nil {
 		return Event{}
