@@ -24,7 +24,7 @@
 ## 3. System Components
 
 - **Domain core:** cards, deck, rule profile, match state, legal actions, state transitions, events, and outcome detection.
-- **Application/session layer:** coordinates matches and optional in-memory series, accepts player actions, invokes bot strategies, owns active in-memory state, and exposes snapshots to adapters.
+- **Application/session layer:** coordinates matches and optional in-memory series, accepts player decisions, runs headless games, invokes player controllers, owns active in-memory state, and exposes snapshots to adapters.
 - **CLI adapter:** parses terminal commands, renders text output, and calls the application layer.
 - **Bot adapter:** implements strategy interfaces using read-only decision contexts.
 - **Future TUI adapter:** Bubble Tea presentation and input layer over the same application/session layer.
@@ -75,6 +75,8 @@
 - **Internal module structure:**
   - session service.
   - series/table orchestration for consecutive matches.
+  - headless series runner for bot-vs-bot, scripted, and future remote-controller games.
+  - player controller ports that adapt bots, humans, scripts, or future external processes.
   - player/seat registry for the active match.
   - command handling: submit action, ask bot, advance state.
   - snapshot/query methods for rendering.
@@ -110,6 +112,8 @@
 - **Primary contracts/interfaces:**
   - `SessionService`: starts matches, accepts actions, advances bot turns, returns render snapshots.
   - `Series`: links optional consecutive matches at one table through stable seat order and completed match results.
+  - `PlayerController`: receives a read-only turn context and returns a player decision such as a legal action or concession.
+  - `SeriesRunner`: executes a series without CLI/TUI ownership and records a compact decision trace.
   - `Strategy`: receives decision context and returns a proposed action.
   - `EventStore`: appends structured domain/application events for one match stream.
   - `RandomSource`: enables deterministic tests for shuffle and first-attacker fallback.
@@ -117,7 +121,8 @@
 - **How parts communicate:**
   - CLI/TUI/SSH call application services.
   - Application services call domain core.
-  - Bot strategies return proposed domain actions.
+  - Player controllers return decisions; strategy-based controllers adapt bot strategies into ordinary player decisions.
+  - Bot strategies return proposed domain actions and remain replaceable by DSL, heuristic, AI, or external-process engines later.
   - Persistence consumes application event streams and stores snapshots/records later.
 - **API/event/schema strategy:**
   - In-process Go interfaces for MVP.
@@ -262,7 +267,16 @@
 5. When the match completes, series records winner/loser/draw and updates previous-loser state for the next match.
 6. Draw-like completion clears previous-loser state, so the next match falls back to normal setup rules.
 
-### 13.3 Future SSH Match Flow
+### 13.3 Headless Runner Flow
+
+1. Tests, bot labs, or future automation configure a `Series`, seat controllers, deal options, and a max-actions guard.
+2. Runner starts each match through `Series`, preserving the same setup and event path used by adapters.
+3. Runner asks the active seat's `PlayerController` for one decision from a copied read-only turn context.
+4. Runner validates returned actions against legal actions or applies concession through the same session path.
+5. Runner stops with a typed error if a controller is missing, returns an illegal decision, or exceeds the action limit.
+6. Runner returns completed match summaries plus a compact decision trace for smoke tests and future analysis.
+
+### 13.4 Future SSH Match Flow
 
 1. `durakd` accepts an SSH session through Wish.
 2. SSH adapter maps the connection to a player identity.
@@ -272,7 +286,7 @@
 6. Match session serializes commands and mutates game state in order.
 7. Persistence adapter records events and final summaries once enabled.
 
-### 13.4 Future Match Completion Persistence Flow
+### 13.5 Future Match Completion Persistence Flow
 
 1. Domain core emits match-end event.
 2. Application layer builds match summary and requested rating/currency effects.
