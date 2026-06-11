@@ -46,3 +46,41 @@ func TestInMemoryEventStoreReturnsCopiesByMatch(t *testing.T) {
 		t.Fatalf("stored hand sizes = %v, want copied [1 1]", again[0].Domain.Deal.HandSizes)
 	}
 }
+
+func TestInMemoryInternalEventStoreReturnsCopiesByMatch(t *testing.T) {
+	store := app.NewInMemoryInternalEventStore()
+	first := app.MatchID("match-1")
+	second := app.MatchID("match-2")
+	events := []app.InternalEvent{
+		{
+			MatchID:  first,
+			Sequence: 1,
+			Domain:   domain.Event{Kind: domain.EventKindDeal},
+			Deal: &app.InternalDealEvent{
+				Hands: [][]domain.Card{{{Rank: domain.Six, Suit: domain.Clubs}}},
+				Stock: []domain.Card{{Rank: domain.Nine, Suit: domain.Hearts}},
+			},
+		},
+		{
+			MatchID:  second,
+			Sequence: 1,
+			Domain:   domain.Event{Kind: domain.EventKindMatchStarted},
+		},
+	}
+
+	if err := store.AppendInternalEvents(context.Background(), events); err != nil {
+		t.Fatalf("AppendInternalEvents returned error: %v", err)
+	}
+	events[0].Deal.Hands[0][0] = domain.Card{Rank: domain.Ace, Suit: domain.Spades}
+
+	got := store.EventsForMatch(first)
+	if len(got) != 1 {
+		t.Fatalf("got %d events for match, want 1", len(got))
+	}
+	got[0].Deal.Hands[0][0] = domain.Card{Rank: domain.King, Suit: domain.Spades}
+
+	again := store.EventsForMatch(first)
+	if again[0].Deal.Hands[0][0] != (domain.Card{Rank: domain.Six, Suit: domain.Clubs}) {
+		t.Fatalf("stored hand = %v, want copied 6C", again[0].Deal.Hands[0][0])
+	}
+}

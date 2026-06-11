@@ -125,6 +125,29 @@ func TestSessionWithEventStoreRequiresMatchID(t *testing.T) {
 	}
 }
 
+func TestSessionWithInternalEventStoreRequiresMatchID(t *testing.T) {
+	store := app.NewInMemoryInternalEventStore()
+	deal := testInitialDeal()
+	_, err := app.NewSessionWithOptions(context.Background(), mustMatchFromDeal(t, deal), app.SessionOptions{
+		InternalEventStore: store,
+		InitialDeal:        &deal,
+	})
+	if !errors.Is(err, app.ErrEmptyMatchID) {
+		t.Fatalf("NewSessionWithOptions error = %v, want ErrEmptyMatchID", err)
+	}
+}
+
+func TestSessionWithInternalEventStoreRequiresInitialDeal(t *testing.T) {
+	store := app.NewInMemoryInternalEventStore()
+	_, err := app.NewSessionWithOptions(context.Background(), mustMatch(t, [][]domain.Card{
+		{{Rank: domain.Six, Suit: domain.Clubs}},
+		{{Rank: domain.Seven, Suit: domain.Clubs}},
+	}), app.SessionOptions{MatchID: testMatchID, InternalEventStore: store})
+	if !errors.Is(err, app.ErrMissingInitialDeal) {
+		t.Fatalf("NewSessionWithOptions error = %v, want ErrMissingInitialDeal", err)
+	}
+}
+
 func TestSessionApplyActionEmitsSequencedEvents(t *testing.T) {
 	attack := domain.Card{Rank: domain.Six, Suit: domain.Clubs}
 	defense := domain.Card{Rank: domain.Seven, Suit: domain.Clubs}
@@ -293,6 +316,62 @@ func TestSessionKeepsPendingEventsWhenStoreFails(t *testing.T) {
 	}
 }
 
+func TestNewDealtSessionWithInternalEventStoreEmitsCanonicalDeal(t *testing.T) {
+	hands := [][]domain.Card{
+		{
+			{Rank: domain.Six, Suit: domain.Clubs},
+			{Rank: domain.Seven, Suit: domain.Diamonds},
+			{Rank: domain.Eight, Suit: domain.Hearts},
+			{Rank: domain.Nine, Suit: domain.Spades},
+			{Rank: domain.Ten, Suit: domain.Clubs},
+			{Rank: domain.Jack, Suit: domain.Diamonds},
+		},
+		{
+			{Rank: domain.Queen, Suit: domain.Hearts},
+			{Rank: domain.King, Suit: domain.Spades},
+			{Rank: domain.Ace, Suit: domain.Clubs},
+			{Rank: domain.Six, Suit: domain.Diamonds},
+			{Rank: domain.Seven, Suit: domain.Hearts},
+			{Rank: domain.Eight, Suit: domain.Spades},
+		},
+	}
+	stock := stockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, hands...)
+	deck := deckForDeal(hands, stock)
+	store := app.NewInMemoryInternalEventStore()
+
+	_, _, err := app.NewDealtSessionWithOptions(context.Background(), 2, domain.DefaultRuleProfile(), domain.DealOptions{
+		Shuffler: domain.ShuffleFunc(func(cards []domain.Card) {
+			copy(cards, deck)
+		}),
+	}, app.SessionOptions{MatchID: testMatchID, InternalEventStore: store})
+	if err != nil {
+		t.Fatalf("NewDealtSessionWithOptions returned error: %v", err)
+	}
+
+	events := store.Events()
+	if len(events) != 2 {
+		t.Fatalf("got %d internal events, want 2: %+v", len(events), events)
+	}
+	if events[0].Domain.Kind != domain.EventKindMatchStarted || events[1].Domain.Kind != domain.EventKindDeal {
+		t.Fatalf("internal event kinds = %v/%v, want started/deal", events[0].Domain.Kind, events[1].Domain.Kind)
+	}
+	if events[0].Sequence != 1 || events[1].Sequence != 2 {
+		t.Fatalf("internal sequences = %d/%d, want 1/2", events[0].Sequence, events[1].Sequence)
+	}
+	if events[1].Deal == nil {
+		t.Fatal("internal deal is nil")
+	}
+	if !slices.Equal(events[1].Deal.Hands[0], hands[0]) || !slices.Equal(events[1].Deal.Hands[1], hands[1]) {
+		t.Fatalf("internal hands = %v, want %v", events[1].Deal.Hands, hands)
+	}
+	if !slices.Equal(events[1].Deal.Stock, stock) {
+		t.Fatalf("internal stock = %v, want %v", events[1].Deal.Stock, stock)
+	}
+	if got := events[1].Domain.Deal.HandSizes; !slices.Equal(got, []int{6, 6}) {
+		t.Fatalf("public deal hand sizes = %v, want [6 6]", got)
+	}
+}
+
 func TestNewDealtSession(t *testing.T) {
 	hands := [][]domain.Card{
 		{
@@ -410,13 +489,21 @@ func (s *sequenceFailStore) AppendEvents(ctx context.Context, events []app.Event
 
 func mustMatch(t *testing.T, hands [][]domain.Card) *domain.Match {
 	t.Helper()
-	deal := domain.InitialDeal{
-		Hands:          hands,
+	deal := testInitialDeal()
+	deal.Hands = hands
+	return mustMatchFromDeal(t, deal)
+}
+
+func testInitialDeal() domain.InitialDeal {
+	return domain.InitialDeal{
+		Hands: [][]domain.Card{
+			{{Rank: domain.Six, Suit: domain.Clubs}},
+			{{Rank: domain.Seven, Suit: domain.Clubs}},
+		},
 		TrumpIndicator: domain.Card{Rank: domain.Nine, Suit: domain.Hearts},
 		TrumpSuit:      domain.Hearts,
 		FirstAttacker:  0,
 	}
-	return mustMatchFromDeal(t, deal)
 }
 
 func mustMatchFromDeal(t *testing.T, deal domain.InitialDeal) *domain.Match {

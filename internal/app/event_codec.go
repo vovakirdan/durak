@@ -17,6 +17,8 @@ type EventVisibility string
 const (
 	// EventVisibilityPublic marks events that do not expose hidden hand contents.
 	EventVisibilityPublic EventVisibility = "public"
+	// EventVisibilityInternal marks canonical events that may expose hidden state.
+	EventVisibilityInternal EventVisibility = "internal"
 )
 
 // ErrInvalidEventEnvelope means an event cannot be represented in the stable schema.

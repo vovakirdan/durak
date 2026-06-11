@@ -121,6 +121,87 @@ func TestMarshalEventJSONUsesStableEnvelope(t *testing.T) {
 	}
 }
 
+func TestMarshalInternalEventJSONRoundTripsFullDeal(t *testing.T) {
+	deal := app.InternalDealEvent{
+		Hands: [][]domain.Card{
+			{{Rank: domain.Six, Suit: domain.Clubs}},
+			{{Rank: domain.Seven, Suit: domain.Hearts}},
+		},
+		Stock: []domain.Card{
+			{Rank: domain.Eight, Suit: domain.Spades},
+			{Rank: domain.Nine, Suit: domain.Diamonds},
+		},
+		TrumpIndicator:      domain.Card{Rank: domain.Nine, Suit: domain.Diamonds},
+		TrumpSuit:           domain.Diamonds,
+		FirstAttacker:       domain.Seat(0),
+		Defender:            domain.Seat(1),
+		Redeals:             1,
+		TrumpReselections:   2,
+		RandomFirstAttacker: true,
+	}
+	publicDeal := deal.PublicDeal()
+	event := app.InternalEvent{
+		MatchID:  testMatchID,
+		Sequence: 42,
+		Domain: domain.Event{
+			Kind: domain.EventKindDeal,
+			Deal: &publicDeal,
+		},
+		Deal: &deal,
+	}
+
+	data, err := app.MarshalInternalEventJSON(&event)
+	if err != nil {
+		t.Fatalf("MarshalInternalEventJSON returned error: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"visibility":"internal"`)) {
+		t.Fatalf("internal event visibility not encoded: %s", data)
+	}
+	if !bytes.Contains(data, []byte(`"hands"`)) || !bytes.Contains(data, []byte(`"stock"`)) {
+		t.Fatalf("internal deal omitted hidden setup state: %s", data)
+	}
+	if _, publicErr := app.UnmarshalEventJSON(data); !errors.Is(publicErr, app.ErrInvalidEventEnvelope) {
+		t.Fatalf("public unmarshal error = %v, want ErrInvalidEventEnvelope", publicErr)
+	}
+
+	decoded, err := app.UnmarshalInternalEventJSON(data)
+	if err != nil {
+		t.Fatalf("UnmarshalInternalEventJSON returned error: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, event) {
+		t.Fatalf("internal round trip = %+v, want %+v", decoded, event)
+	}
+}
+
+func TestMarshalInternalEventJSONRoundTripsAction(t *testing.T) {
+	event := app.InternalEvent{
+		MatchID:  testMatchID,
+		Sequence: 43,
+		Domain: domain.Event{
+			Kind: domain.EventKindAttack,
+			Action: &domain.ActionEvent{
+				Action: domain.Action{
+					Kind: domain.ActionKindAttack,
+					Seat: domain.Seat(0),
+					Card: domain.Card{Rank: domain.Six, Suit: domain.Clubs},
+				},
+			},
+		},
+	}
+
+	data, err := app.MarshalInternalEventJSON(&event)
+	if err != nil {
+		t.Fatalf("MarshalInternalEventJSON returned error: %v", err)
+	}
+	decoded, err := app.UnmarshalInternalEventJSON(data)
+	if err != nil {
+		t.Fatalf("UnmarshalInternalEventJSON returned error: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, event) {
+		t.Fatalf("internal round trip = %+v, want %+v", decoded, event)
+	}
+}
+
 func TestUnmarshalEventJSONRejectsInvalidEnvelope(t *testing.T) {
 	tests := []string{
 		`{"schema_version":2,"match_id":"match","sequence":1,"kind":"match_started","visibility":"public","payload":{}}`,
@@ -135,6 +216,20 @@ func TestUnmarshalEventJSONRejectsInvalidEnvelope(t *testing.T) {
 		_, err := app.UnmarshalEventJSON([]byte(input))
 		if !errors.Is(err, app.ErrInvalidEventEnvelope) {
 			t.Fatalf("UnmarshalEventJSON(%s) error = %v, want ErrInvalidEventEnvelope", input, err)
+		}
+	}
+}
+
+func TestUnmarshalInternalEventJSONRejectsInvalidEnvelope(t *testing.T) {
+	tests := []string{
+		`{"schema_version":1,"match_id":"match","sequence":1,"kind":"match_started","visibility":"public","payload":{}}`,
+		`{"schema_version":1,"match_id":"match","sequence":1,"kind":"deal","visibility":"internal","payload":{"hand_sizes":[1,1]}}`,
+	}
+
+	for _, input := range tests {
+		_, err := app.UnmarshalInternalEventJSON([]byte(input))
+		if !errors.Is(err, app.ErrInvalidEventEnvelope) {
+			t.Fatalf("UnmarshalInternalEventJSON(%s) error = %v, want ErrInvalidEventEnvelope", input, err)
 		}
 	}
 }
@@ -176,6 +271,20 @@ func TestMarshalEventJSONRejectsInvalidRuntimeEvent(t *testing.T) {
 		_, err := app.MarshalEventJSON(&event)
 		if !errors.Is(err, app.ErrInvalidEventEnvelope) {
 			t.Fatalf("MarshalEventJSON(%+v) error = %v, want ErrInvalidEventEnvelope", event.Domain, err)
+		}
+	}
+}
+
+func TestMarshalInternalEventJSONRejectsInvalidRuntimeEvent(t *testing.T) {
+	events := []app.InternalEvent{
+		{MatchID: testMatchID, Sequence: 42, Domain: domain.Event{Kind: domain.EventKindDeal}},
+		{MatchID: testMatchID, Sequence: 42, Domain: domain.Event{Kind: domain.EventKindAttack}},
+	}
+
+	for _, event := range events {
+		_, err := app.MarshalInternalEventJSON(&event)
+		if !errors.Is(err, app.ErrInvalidEventEnvelope) {
+			t.Fatalf("MarshalInternalEventJSON(%+v) error = %v, want ErrInvalidEventEnvelope", event, err)
 		}
 	}
 }

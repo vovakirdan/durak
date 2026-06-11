@@ -121,7 +121,9 @@
   - In-process Go interfaces for MVP.
   - Application events include match id and sequence number around structured domain event payloads.
   - Stable serialized events use a JSON envelope: `schema_version`, `match_id`, `sequence`, `kind`, `visibility`, and `payload`.
-  - Current serialized events are `visibility=public`; future private events must be explicit rather than mixed into public replay data.
+  - The canonical match source of truth is an internal event stream. Public events are a safe projection/export of that stream, not the full replay source.
+  - Current CLI JSONL output writes only `visibility=public` events. It is suitable for visible history and debugging, but it is not sufficient for exact resume or AI training data.
+  - Internal events use `visibility=internal` and may include hidden state such as initial hands and stock order. Hidden state must never be mixed into public replay data.
   - Durable adapters may add record metadata such as insertion timestamp outside the envelope when a database store is introduced.
   - JSONL stores one event envelope per line and is intended for local debugging, replay smoke tests, and export.
   - SQLite remains the target store for indexed history, projections, ratings, currency, and daemon concurrency.
@@ -139,9 +141,15 @@
   - Future persistence owns durable records, not live rule execution.
 - **Event stream roles:**
   - Public events are safe for visible history, public replay, and local JSONL export.
-  - Future internal events may include hidden state such as hands, stock order, seeds, or decision context for exact resume and model training.
+  - Internal events are the canonical per-match stream for exact replay/resume. The initial internal deal records hidden hands and stock order; later accepted actions can be replayed from that state.
+  - Future internal events may include additional hidden state such as explicit draw cards, seeds, or decision context when needed for faster reconstruction or model training.
   - Snapshots are derived checkpoints for faster resume/replay; they are not the source of truth.
   - Projections/read models are derived tables for statistics, scoring, ratings, and global analytics; they must be rebuildable from event streams.
+- **Match and series boundaries:**
+  - A match is self-contained: rules, seats, initial deal, actions, and outcome must be enough to replay/analyze that match without reading a previous match.
+  - A series/table session links optional consecutive matches through `series_id`, stable `seat_order`, match ids, and previous loser metadata.
+  - The "next match starts before the previous loser" rule is an input to new-match creation from series/table state, not a hidden dependency inside an old match stream.
+  - Multiplayer adapters must expose per-seat views from internal state; public streams are not player-private views.
 - **Primary storage responsibilities:**
   - MVP before event-history milestone: no durable storage.
   - First event-history milestone: append public match events to JSONL.
@@ -149,6 +157,7 @@
   - Later milestones: player profile, rating records, and currency ledger entries.
 - **Transaction boundaries:**
   - JSONL: single-process append with batch validation before write; no cross-record transaction guarantees.
+  - Dual public/internal writes are not treated as an atomic durable transaction in the local JSONL milestone. Daemon persistence must write the canonical internal event and its public projection transactionally or rebuild the public projection from internal events.
   - Future match completion transaction should persist final match events, summary, rating update, and currency ledger effects consistently.
 - **Caching or queue usage:** none for MVP. Do not introduce cache or queue until daemon operations create a concrete need.
 
@@ -260,7 +269,7 @@
 
 ## 14. Assumptions
 
-- The first implementation does not need storage, networking, or background jobs.
+- The local CLI can run without storage; optional JSONL event export is a local history/debugging adapter, not daemon persistence.
 - Rule configurability is represented in code first and externalized later.
 - Active match state is in memory until persistence begins.
 - The target architecture must support more than two seats even if the first implementation runs two seats only.
@@ -269,7 +278,7 @@
 ## 15. Open Questions / Risks
 
 - **Storage tool choice:** JSONL is accepted only as the first local event-history adapter; choose SQLite driver, query approach, and migration tool when indexed persistence begins.
-- **Event format:** JSON is the first candidate, but the durable event schema needs its own design before history/statistics work.
+- **Event schema evolution:** JSON envelope v1 now exists for public and internal streams; future persistence work must define migration/version handling for SQLite-backed history.
 - **Event-store failure semantics:** current session code keeps events pending when append fails, but durable persistence must explicitly choose retry/blocking, rollback, or command/event transaction behavior before daemon mode relies on it.
 - **Transfer rules:** default preset includes transfer behavior, but implementation can be phased after the base podkidnoy loop if needed.
 - **SSH concurrency:** multiplayer daemon must serialize per-match mutations; do not let multiple sessions mutate match state directly.

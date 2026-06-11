@@ -18,6 +18,8 @@ var (
 	ErrIllegalAction = errors.New("illegal action")
 	// ErrEmptyMatchID means an event store was configured without a match stream id.
 	ErrEmptyMatchID = errors.New("empty match id")
+	// ErrMissingInitialDeal means internal event storage lacks full setup state.
+	ErrMissingInitialDeal = errors.New("missing initial deal")
 )
 
 // Strategy chooses an action from a read-only decision context.
@@ -27,16 +29,22 @@ type Strategy interface {
 
 // Session orchestrates one active match for adapters and bots.
 type Session struct {
-	match        *domain.Match
-	matchID      MatchID
-	eventStore   EventStore
-	nextSequence uint64
+	match         *domain.Match
+	matchID       MatchID
+	eventStore    EventStore
+	internalStore InternalEventStore
+	initialDeal   *domain.InitialDeal
+	nextSequence  uint64
 }
 
-// SessionOptions configures optional session ports.
+// SessionOptions configures optional session ports. EventStore and
+// InternalEventStore are independent ports; durable adapters should not rely on
+// them as an atomic cross-store transaction.
 type SessionOptions struct {
-	MatchID    MatchID
-	EventStore EventStore
+	MatchID            MatchID
+	EventStore         EventStore
+	InternalEventStore InternalEventStore
+	InitialDeal        *domain.InitialDeal
 }
 
 // NewSession wraps an existing domain match.
@@ -52,10 +60,18 @@ func NewSessionWithOptions(ctx context.Context, match *domain.Match, options Ses
 	if options.EventStore != nil && options.MatchID == "" {
 		return nil, ErrEmptyMatchID
 	}
+	if options.InternalEventStore != nil && options.MatchID == "" {
+		return nil, ErrEmptyMatchID
+	}
+	if options.InternalEventStore != nil && options.InitialDeal == nil {
+		return nil, ErrMissingInitialDeal
+	}
 	session := &Session{
-		match:      match,
-		matchID:    options.MatchID,
-		eventStore: options.EventStore,
+		match:         match,
+		matchID:       options.MatchID,
+		eventStore:    options.EventStore,
+		internalStore: options.InternalEventStore,
+		initialDeal:   cloneInitialDeal(options.InitialDeal),
 	}
 	if err := session.emitPendingEvents(ctx); err != nil {
 		return nil, err
@@ -86,6 +102,7 @@ func NewDealtSessionWithOptions(
 		return nil, domain.InitialDeal{}, err
 	}
 
+	sessionOptions.InitialDeal = &deal
 	session, err := NewSessionWithOptions(ctx, match, sessionOptions)
 	if err != nil {
 		return nil, domain.InitialDeal{}, err
@@ -182,8 +199,10 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 		return nil
 	}
 	if s.eventStore == nil {
-		s.match.DrainEvents()
-		return nil
+		if s.internalStore == nil {
+			s.match.DrainEvents()
+			return nil
+		}
 	}
 	storedEvents := make([]Event, len(events))
 	for i, event := range events {
@@ -193,10 +212,61 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 			Domain:   event,
 		}
 	}
-	if err := s.eventStore.AppendEvents(ctx, storedEvents); err != nil {
-		return err
+	if s.internalStore != nil {
+		internalEvents, err := s.internalEvents(events)
+		if err != nil {
+			return err
+		}
+		if err := s.internalStore.AppendInternalEvents(ctx, internalEvents); err != nil {
+			return err
+		}
+	}
+	if s.eventStore != nil {
+		if err := s.eventStore.AppendEvents(ctx, storedEvents); err != nil {
+			return err
+		}
 	}
 	s.nextSequence += uint64(len(events))
 	s.match.DrainEvents()
 	return nil
+}
+
+func (s *Session) internalEvents(events []domain.Event) ([]InternalEvent, error) {
+	storedEvents := make([]InternalEvent, len(events))
+	for i, event := range events {
+		internalEvent := InternalEvent{
+			MatchID:  s.matchID,
+			Sequence: s.nextSequence + uint64(i) + 1,
+			Domain:   event,
+		}
+		if event.Kind == domain.EventKindDeal {
+			if s.initialDeal == nil {
+				return nil, ErrMissingInitialDeal
+			}
+			defender := domain.NoSeat
+			if event.Deal != nil {
+				defender = event.Deal.Defender
+			}
+			deal := NewInternalDealEvent(s.initialDeal, defender)
+			internalEvent.Deal = &deal
+		}
+		storedEvents[i] = internalEvent
+	}
+	return storedEvents, nil
+}
+
+func cloneInitialDeal(deal *domain.InitialDeal) *domain.InitialDeal {
+	if deal == nil {
+		return nil
+	}
+	return &domain.InitialDeal{
+		Hands:               cloneHands(deal.Hands),
+		Stock:               slices.Clone(deal.Stock),
+		TrumpIndicator:      deal.TrumpIndicator,
+		TrumpSuit:           deal.TrumpSuit,
+		FirstAttacker:       deal.FirstAttacker,
+		Redeals:             deal.Redeals,
+		TrumpReselections:   deal.TrumpReselections,
+		RandomFirstAttacker: deal.RandomFirstAttacker,
+	}
 }
