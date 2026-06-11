@@ -28,6 +28,7 @@ type arenaOptions struct {
 	player0      string
 	player1      string
 	rules        string
+	rawAI        rawAIFlags
 }
 
 type arenaSummary struct {
@@ -60,6 +61,7 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 		player0:    normalizePlayerControllerKind(""),
 		player1:    normalizePlayerControllerKind(""),
 		rules:      defaultRulesPreset,
+		rawAI:      newRawAIFlags(),
 	}
 	flags := flag.NewFlagSet("durak arena", flag.ContinueOnError)
 	flags.SetOutput(errOut)
@@ -71,6 +73,7 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	flags.StringVar(&options.player0, "p0", options.player0, "seat 0 controller: "+controllerNames())
 	flags.StringVar(&options.player1, "p1", options.player1, "seat 1 controller: "+controllerNames())
 	flags.StringVar(&options.rules, "rules", options.rules, "rule preset: default")
+	options.rawAI.bind(flags)
 	if err := flags.Parse(args); err != nil {
 		return arenaOptions{}, err
 	}
@@ -121,23 +124,29 @@ func runArenaMatches(
 		}
 		eventStore = store
 	}
+	rawAIClient, err := options.rawAI.client()
+	if err != nil {
+		return app.SeriesRunResult{}, err
+	}
 
-	player0, err := newPlayerController(playerControllerConfig{
+	player0, err := newPlayerController(&playerControllerConfig{
 		Kind:      options.player0,
 		Seed:      options.seed,
 		Seeded:    true,
 		Seat:      domain.Seat(0),
 		TraceSink: rawAITraceSink,
+		RawAI:     rawAIClient,
 	})
 	if err != nil {
 		return app.SeriesRunResult{}, err
 	}
-	player1, err := newPlayerController(playerControllerConfig{
+	player1, err := newPlayerController(&playerControllerConfig{
 		Kind:      options.player1,
 		Seed:      options.seed,
 		Seeded:    true,
 		Seat:      domain.Seat(1),
 		TraceSink: rawAITraceSink,
+		RawAI:     rawAIClient,
 	})
 	if err != nil {
 		return app.SeriesRunResult{}, err

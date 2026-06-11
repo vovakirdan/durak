@@ -48,11 +48,19 @@ Run a replayable CLI deal with:
 go run ./cmd/durak -seed 42 -bot simple -rules default
 ```
 
-Available player controllers for the opponent are `simple`, `random`, and
-`ai-raw-mock`. The AI mock is a deterministic local tester that returns raw
-text commands through the shared parser; real model providers are a future
-milestone. The only rule preset currently exposed through CLI flags is
-`default`; external rule config is also a future milestone.
+Available player controllers for the opponent are `simple`, `random`,
+`ai-raw-mock`, and `ai-raw-exec`. The AI mock is a deterministic local tester
+that returns raw text commands through the shared parser. `ai-raw-exec` writes
+a JSON turn prompt to an external process stdin and reads the first non-empty
+stdout line as the chosen command. The only rule preset currently exposed
+through CLI flags is `default`; external rule config is also a future
+milestone.
+
+Run against an external raw-command AI wrapper with:
+
+```sh
+go run ./cmd/durak -seed 42 -bot ai-raw-exec -ai-command ./durak-ai
+```
 
 Append public match events to a local JSONL log with:
 
@@ -79,10 +87,17 @@ go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500 -p0 simple -p1 r
 Arena mode is a development tool for match stability checks. It runs
 controllers through the application headless runner and can write public events
 with `-event-log` and `-match-id`. Available controllers are `simple`,
-`random`, and `ai-raw-mock`; `random` chooses uniformly from legal actions and
-does not evaluate the position, while `ai-raw-mock` intentionally exercises raw
-command parsing and then retries with legal text commands. Arena uses
-`-rules default` unless another supported preset is provided later.
+`random`, `ai-raw-mock`, and `ai-raw-exec`; `random` chooses uniformly from
+legal actions and does not evaluate the position, while `ai-raw-mock`
+intentionally exercises raw command parsing and then retries with legal text
+commands. `ai-raw-exec` uses the same JSON/stdin and command/stdout protocol as
+CLI play. Arena uses `-rules default` unless another supported preset is
+provided later.
+
+External raw AI processes receive a JSON object containing visible state,
+private hand, legal command hints, and previous parse errors. They should print
+exactly one command such as `1`, `attack 6C`, `defend 1 7C`, `take`, `done`, or
+`concede`.
 
 The Makefile keeps Go build caches under `.cache/` so commands work in
 restricted workspaces without writing to the user-level Go cache.

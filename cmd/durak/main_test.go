@@ -84,6 +84,36 @@ func TestRunArenaAcceptsRawAIController(t *testing.T) {
 	}
 }
 
+func TestRunArenaAcceptsRawExecAIController(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	script := writeTestExecutable(t, "#!/bin/sh\nprintf '1\\n'\n")
+
+	err := run(t.Context(), []string{
+		"arena",
+		"-matches", "1",
+		"-seed", "42",
+		"-max-actions", "800",
+		"-p0", "simple",
+		"-p1", "ai-raw-exec",
+		"-ai-command", script,
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run arena returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"Arena: seat0=simple seat1=ai-raw-exec",
+		"Matches: 1",
+		"Raw AI: attempts=",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
 func TestRunArenaWritesEventLog(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -210,6 +240,37 @@ func TestRunPlayAcceptsBotAndRuleFlags(t *testing.T) {
 	}
 }
 
+func TestRunPlayAcceptsRawExecAIController(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	script := writeTestExecutable(t, "#!/bin/sh\nprintf '1\\n'\n")
+
+	err := run(t.Context(), []string{
+		"-seed", "42",
+		"-bot", "ai-raw-exec",
+		"-ai-command", script,
+	}, strings.NewReader("q\n"), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run play returned error: %v; stderr=%q", err, errOut.String())
+	}
+	if !strings.Contains(out.String(), "Durak CLI") {
+		t.Fatalf("output = %q, want CLI header", out.String())
+	}
+}
+
+func TestRunPlayRequiresRawExecAICommand(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(t.Context(), []string{"-bot", "ai-raw-exec"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run play returned nil error, want missing AI command")
+	}
+	if !strings.Contains(err.Error(), "ai-raw-exec requires -ai-command") {
+		t.Fatalf("error = %v, want missing AI command error", err)
+	}
+}
+
 func TestRunPlayRejectsUnknownBot(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -234,4 +295,13 @@ func TestRunRejectsUnknownRules(t *testing.T) {
 	if !strings.Contains(err.Error(), `unknown rules preset "custom"`) {
 		t.Fatalf("error = %v, want unknown rules error", err)
 	}
+}
+
+func writeTestExecutable(t *testing.T, contents string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "command.sh")
+	if err := os.WriteFile(path, []byte(contents), 0o700); err != nil {
+		t.Fatalf("WriteFile returned error: %v", err)
+	}
+	return path
 }
