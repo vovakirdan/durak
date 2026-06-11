@@ -8,7 +8,17 @@ import (
 	"github.com/vovakirdan/durak/internal/domain"
 )
 
-type renderer struct{}
+type renderer struct {
+	humanSeat domain.Seat
+	botSeat   domain.Seat
+}
+
+func newRenderer(humanSeat, botSeat domain.Seat) renderer {
+	return renderer{
+		humanSeat: humanSeat,
+		botSeat:   botSeat,
+	}
+}
 
 func (renderer) writeHelp(out *output) {
 	out.println("Commands: number | a <card> | d [attack#] <card> | throw <card> | take | done | help | quit")
@@ -21,10 +31,10 @@ func (r renderer) writeState(out *output, decision *app.DecisionContext) {
 		return
 	}
 	out.println()
-	out.printf("Phase: %s | You: seat %d | Attacker: %d | Defender: %d\n",
-		formatPhase(decision.Phase), decision.Seat, decision.Attacker, decision.Defender)
+	out.printf("Phase: %s | You: %s | Attacker: %s | Defender: %s\n",
+		formatPhase(decision.Phase), r.formatSeat(decision.Seat), r.formatSeat(decision.Attacker), r.formatSeat(decision.Defender))
 	out.printf("Trump: %s (%s) | Stock: %d | Discard: %d | Hands: %s\n",
-		decision.TrumpSuit, decision.TrumpIndicator, decision.StockCount, decision.DiscardCount, formatHandSizes(decision.HandSizes))
+		decision.TrumpSuit, decision.TrumpIndicator, decision.StockCount, decision.DiscardCount, r.formatHandSizes(decision.HandSizes))
 	r.writeTable(out, decision.Table)
 	r.writeHand(out, decision.Hand)
 	r.writeActions(out, decision.LegalActions)
@@ -89,10 +99,21 @@ func (renderer) writeResult(out *output, view *app.SeatView) {
 	}
 }
 
-func formatHandSizes(sizes []int) string {
+func (r renderer) formatSeat(seat domain.Seat) string {
+	switch seat {
+	case r.humanSeat:
+		return fmt.Sprintf("you(%d)", seat)
+	case r.botSeat:
+		return fmt.Sprintf("bot(%d)", seat)
+	default:
+		return fmt.Sprintf("seat(%d)", seat)
+	}
+}
+
+func (r renderer) formatHandSizes(sizes []int) string {
 	parts := make([]string, len(sizes))
 	for seat, size := range sizes {
-		parts[seat] = fmt.Sprintf("%d:%d", seat, size)
+		parts[seat] = fmt.Sprintf("%s:%d", r.formatSeat(domain.Seat(seat)), size)
 	}
 	return strings.Join(parts, " ")
 }

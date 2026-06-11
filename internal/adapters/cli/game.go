@@ -12,20 +12,29 @@ import (
 )
 
 type game struct {
-	session  *app.Session
-	bot      app.Strategy
-	scanner  *bufio.Scanner
-	out      *output
-	renderer renderer
+	session   *app.Session
+	bot       app.Strategy
+	humanSeat domain.Seat
+	botSeat   domain.Seat
+	scanner   *bufio.Scanner
+	out       *output
+	renderer  renderer
 }
 
-func newGame(session *app.Session, bot app.Strategy, in io.Reader, out io.Writer) *game {
+type gameOptions struct {
+	humanSeat domain.Seat
+	botSeat   domain.Seat
+}
+
+func newGame(session *app.Session, bot app.Strategy, in io.Reader, out io.Writer, options gameOptions) *game {
 	return &game{
-		session:  session,
-		bot:      bot,
-		scanner:  bufio.NewScanner(in),
-		out:      newOutput(out),
-		renderer: renderer{},
+		session:   session,
+		bot:       bot,
+		humanSeat: options.humanSeat,
+		botSeat:   options.botSeat,
+		scanner:   bufio.NewScanner(in),
+		out:       newOutput(out),
+		renderer:  newRenderer(options.humanSeat, options.botSeat),
 	}
 }
 
@@ -41,7 +50,7 @@ func (g *game) run(ctx context.Context) error {
 			return err
 		}
 
-		decision := g.session.DecisionContext(humanSeat)
+		decision := g.session.DecisionContext(g.humanSeat)
 		g.renderer.writeState(g.out, &decision)
 		if decision.Phase == domain.MatchPhaseComplete {
 			return g.out.result()
@@ -86,11 +95,11 @@ func (g *game) run(ctx context.Context) error {
 
 func (g *game) runBotTurns(ctx context.Context) error {
 	for {
-		view := g.session.ViewForSeat(humanSeat)
-		if activeSeat(&view) != botSeat {
+		view := g.session.ViewForSeat(g.humanSeat)
+		if activeSeat(&view) != g.botSeat {
 			return nil
 		}
-		action, err := g.session.ApplyStrategy(ctx, botSeat, g.bot)
+		action, err := g.session.ApplyStrategy(ctx, g.botSeat, g.bot)
 		if err != nil {
 			return err
 		}

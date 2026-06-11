@@ -10,12 +10,12 @@ import (
 func TestParseCommandSelectsNumberedLegalAction(t *testing.T) {
 	second := domain.Action{
 		Kind: domain.ActionKindAttack,
-		Seat: humanSeat,
+		Seat: defaultHumanSeat,
 		Card: domain.Card{Rank: domain.Seven, Suit: domain.Clubs},
 	}
 	decision := app.DecisionContext{
 		LegalActions: []domain.Action{
-			{Kind: domain.ActionKindAttack, Seat: humanSeat, Card: domain.Card{Rank: domain.Six, Suit: domain.Clubs}},
+			{Kind: domain.ActionKindAttack, Seat: defaultHumanSeat, Card: domain.Card{Rank: domain.Six, Suit: domain.Clubs}},
 			second,
 		},
 	}
@@ -34,7 +34,7 @@ func TestParseCommandParsesAttackByHandIndex(t *testing.T) {
 	decision := app.DecisionContext{
 		Hand: []domain.Card{card},
 		LegalActions: []domain.Action{
-			{Kind: domain.ActionKindAttack, Seat: humanSeat, Card: card},
+			{Kind: domain.ActionKindAttack, Seat: defaultHumanSeat, Card: card},
 		},
 	}
 
@@ -52,7 +52,7 @@ func TestParseCommandParsesDefendByAttackNumberAndCardCode(t *testing.T) {
 	decision := app.DecisionContext{
 		Hand: []domain.Card{card},
 		LegalActions: []domain.Action{
-			{Kind: domain.ActionKindDefend, Seat: humanSeat, Card: card, AttackIndex: 1},
+			{Kind: domain.ActionKindDefend, Seat: defaultHumanSeat, Card: card, AttackIndex: 1},
 		},
 	}
 
@@ -66,7 +66,7 @@ func TestParseCommandParsesDefendByAttackNumberAndCardCode(t *testing.T) {
 }
 
 func TestParseCommandParsesFinishTake(t *testing.T) {
-	action := domain.Action{Kind: domain.ActionKindFinishTake, Seat: humanSeat}
+	action := domain.Action{Kind: domain.ActionKindFinishTake, Seat: defaultHumanSeat}
 	decision := app.DecisionContext{LegalActions: []domain.Action{action}}
 
 	command, err := parseCommand("done", &decision)

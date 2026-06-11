@@ -4,25 +4,60 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 
-	"github.com/vovakirdan/durak/internal/adapters/bot"
 	"github.com/vovakirdan/durak/internal/app"
 	"github.com/vovakirdan/durak/internal/domain"
 )
 
 const (
-	humanSeat = domain.Seat(0)
-	botSeat   = domain.Seat(1)
+	defaultHumanSeat   = domain.Seat(0)
+	defaultBotSeat     = domain.Seat(1)
+	defaultPlayerCount = 2
 )
 
-// Run starts the local CLI adapter.
-func Run(ctx context.Context, in io.Reader, out io.Writer) error {
-	session, _, err := app.NewDealtSession(2, domain.DefaultRuleProfile(), domain.DealOptions{})
+// ErrMissingStrategy means CLI wiring did not provide a bot strategy.
+var ErrMissingStrategy = errors.New("missing bot strategy")
+
+// RunOptions configures the local CLI adapter without coupling it to concrete
+// bot or deal implementations.
+type RunOptions struct {
+	PlayerCount int
+	Profile     domain.RuleProfile
+	Deal        domain.DealOptions
+	Strategy    app.Strategy
+}
+
+// RunWithOptions starts the local CLI adapter.
+func RunWithOptions(ctx context.Context, in io.Reader, out io.Writer, options *RunOptions) error {
+	runOptions := normalizeRunOptions(options)
+	if runOptions.Strategy == nil {
+		return ErrMissingStrategy
+	}
+
+	session, _, err := app.NewDealtSession(runOptions.PlayerCount, runOptions.Profile, runOptions.Deal)
 	if err != nil {
 		return err
 	}
 
-	game := newGame(session, bot.NewSimpleStrategy(), in, out)
+	game := newGame(session, runOptions.Strategy, in, out, gameOptions{
+		humanSeat: defaultHumanSeat,
+		botSeat:   defaultBotSeat,
+	})
 	return game.run(ctx)
+}
+
+func normalizeRunOptions(options *RunOptions) RunOptions {
+	normalized := RunOptions{}
+	if options != nil {
+		normalized = *options
+	}
+	if normalized.PlayerCount == 0 {
+		normalized.PlayerCount = defaultPlayerCount
+	}
+	if normalized.Profile == (domain.RuleProfile{}) {
+		normalized.Profile = domain.DefaultRuleProfile()
+	}
+	return normalized
 }

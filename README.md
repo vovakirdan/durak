@@ -35,6 +35,12 @@ make run
 make build
 ```
 
+Run a replayable CLI deal with:
+
+```sh
+go run ./cmd/durak -seed 42
+```
+
 The Makefile keeps Go build caches under `.cache/` so commands work in
 restricted workspaces without writing to the user-level Go cache.
 

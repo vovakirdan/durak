@@ -206,6 +206,29 @@ func TestDealInitialRandomFirstAttackerWhenNoPlayerHasTrump(t *testing.T) {
 	}
 }
 
+func TestSeededDealOptionsRepeatsDeal(t *testing.T) {
+	profile := DefaultRuleProfile()
+
+	first, err := DealInitial(2, profile, SeededDealOptions(42))
+	if err != nil {
+		t.Fatalf("DealInitial first returned error: %v", err)
+	}
+	second, err := DealInitial(2, profile, SeededDealOptions(42))
+	if err != nil {
+		t.Fatalf("DealInitial second returned error: %v", err)
+	}
+
+	if !equalHands(first.Hands, second.Hands) {
+		t.Fatalf("hands differ for same seed: %v vs %v", first.Hands, second.Hands)
+	}
+	if !slices.Equal(first.Stock, second.Stock) {
+		t.Fatalf("stock differs for same seed: %v vs %v", first.Stock, second.Stock)
+	}
+	if first.TrumpIndicator != second.TrumpIndicator || first.FirstAttacker != second.FirstAttacker {
+		t.Fatalf("deal metadata differs for same seed: %+v vs %+v", first, second)
+	}
+}
+
 func TestDealInitialRejectsUnsupportedPlayerCount(t *testing.T) {
 	_, err := DealInitial(6, DefaultRuleProfile(), DealOptions{})
 	if !errors.Is(err, ErrInvalidPlayerCount) {
