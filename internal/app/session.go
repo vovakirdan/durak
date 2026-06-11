@@ -16,6 +16,8 @@ var (
 	ErrNilStrategy = errors.New("nil strategy")
 	// ErrIllegalAction means a strategy selected an action outside legal actions.
 	ErrIllegalAction = errors.New("illegal action")
+	// ErrEmptyMatchID means an event store was configured without a match stream id.
+	ErrEmptyMatchID = errors.New("empty match id")
 )
 
 // Strategy chooses an action from a read-only decision context.
@@ -26,13 +28,15 @@ type Strategy interface {
 // Session orchestrates one active match for adapters and bots.
 type Session struct {
 	match        *domain.Match
-	eventSink    EventSink
+	matchID      MatchID
+	eventStore   EventStore
 	nextSequence uint64
 }
 
 // SessionOptions configures optional session ports.
 type SessionOptions struct {
-	EventSink EventSink
+	MatchID    MatchID
+	EventStore EventStore
 }
 
 // NewSession wraps an existing domain match.
@@ -45,9 +49,13 @@ func NewSessionWithOptions(ctx context.Context, match *domain.Match, options Ses
 	if match == nil {
 		return nil, ErrNilMatch
 	}
+	if options.EventStore != nil && options.MatchID == "" {
+		return nil, ErrEmptyMatchID
+	}
 	session := &Session{
-		match:     match,
-		eventSink: options.EventSink,
+		match:      match,
+		matchID:    options.MatchID,
+		eventStore: options.EventStore,
 	}
 	if err := session.emitPendingEvents(ctx); err != nil {
 		return nil, err
@@ -170,17 +178,23 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 		return err
 	}
 	events := s.match.Events()
-	if s.eventSink == nil {
+	if len(events) == 0 {
+		return nil
+	}
+	if s.eventStore == nil {
 		s.match.DrainEvents()
 		return nil
 	}
+	storedEvents := make([]Event, len(events))
 	for i, event := range events {
-		if err := s.eventSink.RecordEvent(ctx, Event{
+		storedEvents[i] = Event{
+			MatchID:  s.matchID,
 			Sequence: s.nextSequence + uint64(i) + 1,
 			Domain:   event,
-		}); err != nil {
-			return err
 		}
+	}
+	if err := s.eventStore.AppendEvents(ctx, storedEvents); err != nil {
+		return err
 	}
 	s.nextSequence += uint64(len(events))
 	s.match.DrainEvents()

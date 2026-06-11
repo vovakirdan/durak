@@ -77,8 +77,8 @@
   - player/seat registry for the active match.
   - command handling: submit action, ask bot, advance state.
   - snapshot/query methods for rendering.
-  - event sink port.
-- **Key dependencies:** domain core, bot strategy interfaces, optional event sink.
+  - event store port.
+- **Key dependencies:** domain core, bot strategy interfaces, optional event store.
 - **Why this boundary exists:** UI adapters should not mutate match state directly.
 
 ### Bot Strategy Layer
@@ -108,17 +108,18 @@
 - **Primary contracts/interfaces:**
   - `SessionService`: starts matches, accepts actions, advances bot turns, returns render snapshots.
   - `Strategy`: receives decision context and returns a proposed action.
-  - `EventSink`: receives structured domain/application events.
+  - `EventStore`: appends structured domain/application events for one match stream.
   - `RandomSource`: enables deterministic tests for shuffle and first-attacker fallback.
   - Future `PlayerStore`, `MatchStore`, `RatingStore`, and `CurrencyLedger`.
 - **How parts communicate:**
   - CLI/TUI/SSH call application services.
   - Application services call domain core.
   - Bot strategies return proposed domain actions.
-  - Persistence consumes events and stores snapshots/records later.
+  - Persistence consumes application event streams and stores snapshots/records later.
 - **API/event/schema strategy:**
   - In-process Go interfaces for MVP.
-  - Domain events include version, sequence number, match id, event type, payload, and visibility.
+  - Application events include match id and sequence number around structured domain event payloads.
+  - Durable event serialization must add schema/version metadata before disk storage is introduced.
   - Hidden-card data must be marked so future public replay/export can redact it.
 - **Compatibility notes across parts:**
   - Domain core imports no adapter packages.
@@ -259,6 +260,7 @@
 
 - **Storage tool choice:** choose SQLite driver, query approach, and migration tool only when persistence work begins.
 - **Event format:** JSON is the first candidate, but the durable event schema needs its own design before history/statistics work.
+- **Event-store failure semantics:** current session code keeps events pending when append fails, but durable persistence must explicitly choose retry/blocking, rollback, or command/event transaction behavior before daemon mode relies on it.
 - **Transfer rules:** default preset includes transfer behavior, but implementation can be phased after the base podkidnoy loop if needed.
 - **SSH concurrency:** multiplayer daemon must serialize per-match mutations; do not let multiple sessions mutate match state directly.
 - **Economy and rating:** rating/currency updates should be ledger-like and transactional when introduced.

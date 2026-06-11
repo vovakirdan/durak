@@ -6,43 +6,62 @@ import (
 	"github.com/vovakirdan/durak/internal/domain"
 )
 
+// MatchID identifies one match event stream.
+type MatchID string
+
 // Event is an application-level sequenced domain event.
 type Event struct {
+	MatchID  MatchID
 	Sequence uint64
 	Domain   domain.Event
 }
 
-// EventSink receives sequenced events emitted by active sessions.
-type EventSink interface {
-	RecordEvent(context.Context, Event) error
+// EventStore appends sequenced events emitted by active sessions.
+type EventStore interface {
+	AppendEvents(context.Context, []Event) error
 }
 
-// InMemoryEventRecorder stores events for tests and future local history wiring.
-type InMemoryEventRecorder struct {
+// InMemoryEventStore stores events for tests and future local history wiring.
+type InMemoryEventStore struct {
 	events []Event
 }
 
-// NewInMemoryEventRecorder creates an empty event recorder.
-func NewInMemoryEventRecorder() *InMemoryEventRecorder {
-	return &InMemoryEventRecorder{}
+// NewInMemoryEventStore creates an empty event store.
+func NewInMemoryEventStore() *InMemoryEventStore {
+	return &InMemoryEventStore{}
 }
 
-// RecordEvent stores event unless context has already been canceled.
-func (r *InMemoryEventRecorder) RecordEvent(ctx context.Context, event Event) error {
+// AppendEvents stores events unless context has already been canceled.
+func (s *InMemoryEventStore) AppendEvents(ctx context.Context, events []Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	r.events = append(r.events, event.clone())
+	s.events = append(s.events, cloneEvents(events)...)
 	return nil
 }
 
-// Events returns copied recorded events.
-func (r *InMemoryEventRecorder) Events() []Event {
-	return cloneEvents(r.events)
+// Events returns copied stored events.
+func (s *InMemoryEventStore) Events() []Event {
+	return cloneEvents(s.events)
 }
 
-func (e Event) clone() Event {
+// EventsForMatch returns copied events for one match stream.
+func (s *InMemoryEventStore) EventsForMatch(matchID MatchID) []Event {
+	events := make([]Event, 0, len(s.events))
+	for i := range s.events {
+		if s.events[i].MatchID == matchID {
+			events = append(events, cloneEvent(&s.events[i]))
+		}
+	}
+	return events
+}
+
+func cloneEvent(e *Event) Event {
+	if e == nil {
+		return Event{}
+	}
 	return Event{
+		MatchID:  e.MatchID,
 		Sequence: e.Sequence,
 		Domain:   e.Domain.Clone(),
 	}
@@ -50,8 +69,8 @@ func (e Event) clone() Event {
 
 func cloneEvents(events []Event) []Event {
 	cloned := make([]Event, len(events))
-	for i, event := range events {
-		cloned[i] = event.clone()
+	for i := range events {
+		cloned[i] = cloneEvent(&events[i])
 	}
 	return cloned
 }

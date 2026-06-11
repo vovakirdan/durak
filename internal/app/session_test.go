@@ -90,12 +90,12 @@ func TestSessionApplyStrategyRejectsIllegalAction(t *testing.T) {
 	}
 }
 
-func TestSessionWithEventSinkEmitsInitialEvents(t *testing.T) {
-	recorder := app.NewInMemoryEventRecorder()
+func TestSessionWithEventStoreEmitsInitialEvents(t *testing.T) {
+	store := app.NewInMemoryEventStore()
 	session, err := app.NewSessionWithOptions(context.Background(), mustMatch(t, [][]domain.Card{
 		{{Rank: domain.Six, Suit: domain.Clubs}},
 		{{Rank: domain.Seven, Suit: domain.Clubs}},
-	}), app.SessionOptions{EventSink: recorder})
+	}), app.SessionOptions{MatchID: testMatchID, EventStore: store})
 	if err != nil {
 		t.Fatalf("NewSessionWithOptions returned error: %v", err)
 	}
@@ -103,8 +103,9 @@ func TestSessionWithEventSinkEmitsInitialEvents(t *testing.T) {
 	if session.ViewForSeat(domain.Seat(0)).Phase != domain.MatchPhaseAttack {
 		t.Fatalf("session was not created")
 	}
-	events := recorder.Events()
+	events := store.Events()
 	expectEventKinds(t, events, domain.EventKindMatchStarted, domain.EventKindDeal)
+	expectTestMatchID(t, events)
 	if events[0].Sequence != 1 || events[1].Sequence != 2 {
 		t.Fatalf("sequences = %d/%d, want 1/2", events[0].Sequence, events[1].Sequence)
 	}
@@ -113,14 +114,25 @@ func TestSessionWithEventSinkEmitsInitialEvents(t *testing.T) {
 	}
 }
 
+func TestSessionWithEventStoreRequiresMatchID(t *testing.T) {
+	store := app.NewInMemoryEventStore()
+	_, err := app.NewSessionWithOptions(context.Background(), mustMatch(t, [][]domain.Card{
+		{{Rank: domain.Six, Suit: domain.Clubs}},
+		{{Rank: domain.Seven, Suit: domain.Clubs}},
+	}), app.SessionOptions{EventStore: store})
+	if !errors.Is(err, app.ErrEmptyMatchID) {
+		t.Fatalf("NewSessionWithOptions error = %v, want ErrEmptyMatchID", err)
+	}
+}
+
 func TestSessionApplyActionEmitsSequencedEvents(t *testing.T) {
 	attack := domain.Card{Rank: domain.Six, Suit: domain.Clubs}
 	defense := domain.Card{Rank: domain.Seven, Suit: domain.Clubs}
-	recorder := app.NewInMemoryEventRecorder()
-	session := mustSessionWithSink(t, mustMatch(t, [][]domain.Card{
+	store := app.NewInMemoryEventStore()
+	session := mustSessionWithStore(t, mustMatch(t, [][]domain.Card{
 		{attack},
 		{defense},
-	}), recorder)
+	}), store)
 
 	mustApply(t, session, domain.Action{Kind: domain.ActionKindAttack, Seat: domain.Seat(0), Card: attack})
 	mustApply(t, session, domain.Action{
@@ -131,7 +143,7 @@ func TestSessionApplyActionEmitsSequencedEvents(t *testing.T) {
 	})
 	mustApply(t, session, domain.Action{Kind: domain.ActionKindFinishDefense, Seat: domain.Seat(0)})
 
-	events := recorder.Events()
+	events := store.Events()
 	expectEventKinds(t, events,
 		domain.EventKindMatchStarted,
 		domain.EventKindDeal,
@@ -141,6 +153,7 @@ func TestSessionApplyActionEmitsSequencedEvents(t *testing.T) {
 		domain.EventKindRoundEnded,
 		domain.EventKindMatchEnded,
 	)
+	expectTestMatchID(t, events)
 	for i, event := range events {
 		if event.Sequence != uint64(i+1) {
 			t.Fatalf("event %d sequence = %d, want %d", i, event.Sequence, i+1)
@@ -155,23 +168,24 @@ func TestSessionApplyActionEmitsSequencedEvents(t *testing.T) {
 }
 
 func TestSessionConcedeEmitsSequencedEvents(t *testing.T) {
-	recorder := app.NewInMemoryEventRecorder()
-	session := mustSessionWithSink(t, mustMatch(t, [][]domain.Card{
+	store := app.NewInMemoryEventStore()
+	session := mustSessionWithStore(t, mustMatch(t, [][]domain.Card{
 		{{Rank: domain.Six, Suit: domain.Clubs}},
 		{{Rank: domain.Seven, Suit: domain.Clubs}},
-	}), recorder)
+	}), store)
 
 	if err := session.Concede(context.Background(), domain.Seat(0)); err != nil {
 		t.Fatalf("Concede returned error: %v", err)
 	}
 
-	events := recorder.Events()
+	events := store.Events()
 	expectEventKinds(t, events,
 		domain.EventKindMatchStarted,
 		domain.EventKindDeal,
 		domain.EventKindConcede,
 		domain.EventKindMatchEnded,
 	)
+	expectTestMatchID(t, events)
 	if events[2].Sequence != 3 || events[3].Sequence != 4 {
 		t.Fatalf("concede sequences = %d/%d, want 3/4", events[2].Sequence, events[3].Sequence)
 	}
@@ -187,8 +201,8 @@ func TestSessionConcedeEmitsSequencedEvents(t *testing.T) {
 func TestSessionEmitsRefillEvents(t *testing.T) {
 	attack := domain.Card{Rank: domain.Six, Suit: domain.Clubs}
 	defense := domain.Card{Rank: domain.Seven, Suit: domain.Clubs}
-	recorder := app.NewInMemoryEventRecorder()
-	session := mustSessionWithSink(t, mustMatchFromDeal(t, domain.InitialDeal{
+	store := app.NewInMemoryEventStore()
+	session := mustSessionWithStore(t, mustMatchFromDeal(t, domain.InitialDeal{
 		Hands: [][]domain.Card{
 			{attack},
 			{defense},
@@ -210,7 +224,7 @@ func TestSessionEmitsRefillEvents(t *testing.T) {
 		TrumpIndicator: domain.Card{Rank: domain.Nine, Suit: domain.Hearts},
 		TrumpSuit:      domain.Hearts,
 		FirstAttacker:  0,
-	}), recorder)
+	}), store)
 
 	mustApply(t, session, domain.Action{Kind: domain.ActionKindAttack, Seat: domain.Seat(0), Card: attack})
 	mustApply(t, session, domain.Action{
@@ -221,7 +235,7 @@ func TestSessionEmitsRefillEvents(t *testing.T) {
 	})
 	mustApply(t, session, domain.Action{Kind: domain.ActionKindFinishDefense, Seat: domain.Seat(0)})
 
-	events := recorder.Events()
+	events := store.Events()
 	expectEventKinds(t, events,
 		domain.EventKindMatchStarted,
 		domain.EventKindDeal,
@@ -232,6 +246,7 @@ func TestSessionEmitsRefillEvents(t *testing.T) {
 		domain.EventKindRefill,
 		domain.EventKindRoundEnded,
 	)
+	expectTestMatchID(t, events)
 	if events[5].Domain.Refill.Seat != domain.Seat(0) || events[5].Domain.Refill.Drawn != 6 {
 		t.Fatalf("first refill = %+v, want seat 0 drawn 6", events[5].Domain.Refill)
 	}
@@ -240,25 +255,25 @@ func TestSessionEmitsRefillEvents(t *testing.T) {
 	}
 }
 
-func TestSessionKeepsPendingEventsWhenSinkFails(t *testing.T) {
+func TestSessionKeepsPendingEventsWhenStoreFails(t *testing.T) {
 	attack := domain.Card{Rank: domain.Six, Suit: domain.Clubs}
 	defense := domain.Card{Rank: domain.Seven, Suit: domain.Clubs}
-	sink := &sequenceFailSink{failSequence: 3}
-	session := mustSessionWithSink(t, mustMatch(t, [][]domain.Card{
+	store := &sequenceFailStore{failSequence: 3}
+	session := mustSessionWithStore(t, mustMatch(t, [][]domain.Card{
 		{attack},
 		{defense},
-	}), sink)
+	}), store)
 
 	err := session.ApplyAction(context.Background(), domain.Action{
 		Kind: domain.ActionKindAttack,
 		Seat: domain.Seat(0),
 		Card: attack,
 	})
-	if !errors.Is(err, errSequenceSinkFailed) {
-		t.Fatalf("ApplyAction error = %v, want sink failure", err)
+	if !errors.Is(err, errSequenceStoreFailed) {
+		t.Fatalf("ApplyAction error = %v, want store failure", err)
 	}
 
-	sink.failSequence = 0
+	store.failSequence = 0
 	mustApply(t, session, domain.Action{
 		Kind:        domain.ActionKindDefend,
 		Seat:        domain.Seat(1),
@@ -266,14 +281,15 @@ func TestSessionKeepsPendingEventsWhenSinkFails(t *testing.T) {
 		AttackIndex: 0,
 	})
 
-	expectEventKinds(t, sink.events,
+	expectEventKinds(t, store.events,
 		domain.EventKindMatchStarted,
 		domain.EventKindDeal,
 		domain.EventKindAttack,
 		domain.EventKindDefend,
 	)
-	if sink.events[2].Sequence != 3 || sink.events[3].Sequence != 4 {
-		t.Fatalf("replayed sequences = %d/%d, want 3/4", sink.events[2].Sequence, sink.events[3].Sequence)
+	expectTestMatchID(t, store.events)
+	if store.events[2].Sequence != 3 || store.events[3].Sequence != 4 {
+		t.Fatalf("replayed sequences = %d/%d, want 3/4", store.events[2].Sequence, store.events[3].Sequence)
 	}
 }
 
@@ -327,6 +343,15 @@ func expectEventKinds(t *testing.T, events []app.Event, kinds ...domain.EventKin
 	}
 }
 
+func expectTestMatchID(t *testing.T, events []app.Event) {
+	t.Helper()
+	for i, event := range events {
+		if event.MatchID != testMatchID {
+			t.Fatalf("event %d match id = %q, want %q", i, event.MatchID, testMatchID)
+		}
+	}
+}
+
 type strategyFunc func(context.Context, *app.DecisionContext) (domain.Action, error)
 
 func (fn strategyFunc) ChooseAction(ctx context.Context, decision *app.DecisionContext) (domain.Action, error) {
@@ -342,9 +367,12 @@ func mustSession(t *testing.T, match *domain.Match) *app.Session {
 	return session
 }
 
-func mustSessionWithSink(t *testing.T, match *domain.Match, sink app.EventSink) *app.Session {
+func mustSessionWithStore(t *testing.T, match *domain.Match, store app.EventStore) *app.Session {
 	t.Helper()
-	session, err := app.NewSessionWithOptions(context.Background(), match, app.SessionOptions{EventSink: sink})
+	session, err := app.NewSessionWithOptions(context.Background(), match, app.SessionOptions{
+		MatchID:    testMatchID,
+		EventStore: store,
+	})
 	if err != nil {
 		t.Fatalf("NewSessionWithOptions returned error: %v", err)
 	}
@@ -358,21 +386,25 @@ func mustApply(t *testing.T, session *app.Session, action domain.Action) {
 	}
 }
 
-var errSequenceSinkFailed = errors.New("sequence sink failed")
+const testMatchID app.MatchID = "test-match"
 
-type sequenceFailSink struct {
+var errSequenceStoreFailed = errors.New("sequence store failed")
+
+type sequenceFailStore struct {
 	events       []app.Event
 	failSequence uint64
 }
 
-func (s *sequenceFailSink) RecordEvent(ctx context.Context, event app.Event) error {
+func (s *sequenceFailStore) AppendEvents(ctx context.Context, events []app.Event) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if event.Sequence == s.failSequence {
-		return errSequenceSinkFailed
+	for _, event := range events {
+		if event.Sequence == s.failSequence {
+			return errSequenceStoreFailed
+		}
 	}
-	s.events = append(s.events, event)
+	s.events = append(s.events, events...)
 	return nil
 }
 
