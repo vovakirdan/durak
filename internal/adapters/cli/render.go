@@ -21,7 +21,7 @@ func newRenderer(humanSeat, botSeat domain.Seat) renderer {
 }
 
 func (renderer) writeHelp(out *output) {
-	out.println("Commands: number | a <card> | d [attack#] <card> | throw <card> | tr <card> | take | done | help | quit")
+	out.println("Commands: number | a <card> | d [attack#] <card> | throw <card> | tr <card> | take | done | concede | help | quit")
 	out.println("Cards can be hand indexes or codes like 6C, 10D, AH.")
 }
 

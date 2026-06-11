@@ -444,6 +444,60 @@ func TestMatchCompletesWhenStockIsEmptyAndPlayerRunsOutAfterDefense(t *testing.T
 	}
 }
 
+func TestConcedeCompletesMatch(t *testing.T) {
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			{{Rank: Six, Suit: Clubs}},
+			{{Rank: Seven, Suit: Clubs}},
+		},
+		nil,
+		0,
+	))
+
+	if err := match.Concede(Seat(1)); err != nil {
+		t.Fatalf("Concede returned error: %v", err)
+	}
+
+	if match.Phase() != MatchPhaseComplete {
+		t.Fatalf("Phase = %v, want MatchPhaseComplete", match.Phase())
+	}
+	if match.Winner() != Seat(0) || match.Loser() != Seat(1) {
+		t.Fatalf("winner/loser = %d/%d, want 0/1", match.Winner(), match.Loser())
+	}
+	events := match.Events()
+	if got := events[len(events)-2].Kind; got != EventKindConcede {
+		t.Fatalf("penultimate event = %v, want EventKindConcede", got)
+	}
+	if got := events[len(events)-2].Concede; got == nil || got.Seat != Seat(1) || got.Winner != Seat(0) {
+		t.Fatalf("concede event = %+v, want seat 1 winner 0", got)
+	}
+	if got := events[len(events)-1].Kind; got != EventKindMatchEnded {
+		t.Fatalf("last event = %v, want EventKindMatchEnded", got)
+	}
+	if err := match.Concede(Seat(1)); !errors.Is(err, ErrMatchComplete) {
+		t.Fatalf("Concede after completion error = %v, want ErrMatchComplete", err)
+	}
+}
+
+func TestConcedeRejectsInvalidSeat(t *testing.T) {
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			{{Rank: Six, Suit: Clubs}},
+			{{Rank: Seven, Suit: Clubs}},
+		},
+		nil,
+		0,
+	))
+
+	err := match.Concede(Seat(2))
+	if !errors.Is(err, ErrInvalidSeat) {
+		t.Fatalf("Concede error = %v, want ErrInvalidSeat", err)
+	}
+	if match.Phase() != MatchPhaseAttack {
+		t.Fatalf("Phase = %v, want MatchPhaseAttack", match.Phase())
+	}
+}
+
 func TestNewMatchRejectsMoreThanTwoPlayersUntilMultiSeatFlowExists(t *testing.T) {
 	deal := matchDeal(
 		[][]Card{

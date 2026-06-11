@@ -96,6 +96,16 @@ func TestParseCommandParsesFinishTake(t *testing.T) {
 	}
 }
 
+func TestParseCommandParsesConcede(t *testing.T) {
+	command, err := parseCommand("surrender", &app.DecisionContext{})
+	if err != nil {
+		t.Fatalf("parseCommand returned error: %v", err)
+	}
+	if command.kind != commandConcede {
+		t.Fatalf("kind = %v, want commandConcede", command.kind)
+	}
+}
+
 func TestParseCommandRejectsIllegalAction(t *testing.T) {
 	card := domain.Card{Rank: domain.Six, Suit: domain.Clubs}
 	decision := app.DecisionContext{Hand: []domain.Card{card}}

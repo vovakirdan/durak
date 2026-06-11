@@ -13,6 +13,7 @@ type commandKind uint8
 
 const (
 	commandAction commandKind = iota
+	commandConcede
 	commandHelp
 	commandQuit
 )
@@ -35,6 +36,9 @@ func parseCommand(input string, decision *app.DecisionContext) (parsedCommand, e
 	}
 	if isHelp(input) {
 		return parsedCommand{kind: commandHelp}, nil
+	}
+	if isConcede(input) {
+		return parsedCommand{kind: commandConcede}, nil
 	}
 	if action, ok := parseActionNumber(input, decision.LegalActions); ok {
 		return parsedCommand{kind: commandAction, action: action}, nil

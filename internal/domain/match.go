@@ -271,12 +271,28 @@ func (m *Match) updateCompletion() {
 		m.winner = emptySeats[0]
 		m.loser = nonEmptySeats[0]
 	}
+	m.appendMatchEndedEvent()
+}
+
+// Concede completes a match when a seat chooses to give up.
+func (m *Match) Concede(seat Seat) error {
+	if err := m.requireInProgress(); err != nil {
+		return err
+	}
+	if !m.validSeat(seat) {
+		return fmt.Errorf("%w: %d", ErrInvalidSeat, seat)
+	}
+
+	m.loser = seat
+	m.winner = nextSeat(seat, len(m.hands))
+	m.phase = MatchPhaseComplete
 	m.appendEvent(Event{
-		Kind: EventKindMatchEnded,
-		MatchEnded: &MatchEndedEvent{
+		Kind: EventKindConcede,
+		Concede: &ConcedeEvent{
+			Seat:   seat,
 			Winner: m.winner,
-			Loser:  m.loser,
-			Draw:   m.winner == NoSeat,
 		},
 	})
+	m.appendMatchEndedEvent()
+	return nil
 }

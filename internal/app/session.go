@@ -96,6 +96,17 @@ func (s *Session) ApplyAction(ctx context.Context, action domain.Action) error {
 	return s.emitPendingEvents(ctx)
 }
 
+// Concede completes the match by concession for the given seat.
+func (s *Session) Concede(ctx context.Context, seat domain.Seat) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := s.match.Concede(seat); err != nil {
+		return err
+	}
+	return s.emitPendingEvents(ctx)
+}
+
 // ApplyStrategy asks strategy for one legal action and applies it.
 func (s *Session) ApplyStrategy(ctx context.Context, seat domain.Seat, strategy Strategy) (domain.Action, error) {
 	if err := ctx.Err(); err != nil {

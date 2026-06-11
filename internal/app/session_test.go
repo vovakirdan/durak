@@ -154,6 +154,36 @@ func TestSessionApplyActionEmitsSequencedEvents(t *testing.T) {
 	}
 }
 
+func TestSessionConcedeEmitsSequencedEvents(t *testing.T) {
+	recorder := app.NewInMemoryEventRecorder()
+	session := mustSessionWithSink(t, mustMatch(t, [][]domain.Card{
+		{{Rank: domain.Six, Suit: domain.Clubs}},
+		{{Rank: domain.Seven, Suit: domain.Clubs}},
+	}), recorder)
+
+	if err := session.Concede(context.Background(), domain.Seat(0)); err != nil {
+		t.Fatalf("Concede returned error: %v", err)
+	}
+
+	events := recorder.Events()
+	expectEventKinds(t, events,
+		domain.EventKindMatchStarted,
+		domain.EventKindDeal,
+		domain.EventKindConcede,
+		domain.EventKindMatchEnded,
+	)
+	if events[2].Sequence != 3 || events[3].Sequence != 4 {
+		t.Fatalf("concede sequences = %d/%d, want 3/4", events[2].Sequence, events[3].Sequence)
+	}
+	if got := events[2].Domain.Concede; got == nil || got.Seat != domain.Seat(0) || got.Winner != domain.Seat(1) {
+		t.Fatalf("concede event = %+v, want seat 0 winner 1", got)
+	}
+	view := session.ViewForSeat(domain.Seat(0))
+	if view.Phase != domain.MatchPhaseComplete || view.Winner != domain.Seat(1) || view.Loser != domain.Seat(0) {
+		t.Fatalf("view = %+v, want complete winner 1 loser 0", view)
+	}
+}
+
 func TestSessionEmitsRefillEvents(t *testing.T) {
 	attack := domain.Card{Rank: domain.Six, Suit: domain.Clubs}
 	defense := domain.Card{Rank: domain.Seven, Suit: domain.Clubs}

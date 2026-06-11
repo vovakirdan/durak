@@ -107,6 +107,32 @@ func TestGameCompletesScriptedRound(t *testing.T) {
 	}
 }
 
+func TestGameConcedeCompletesMatch(t *testing.T) {
+	session := mustCLISession(t, domain.InitialDeal{
+		Hands: [][]domain.Card{
+			{{Rank: domain.Six, Suit: domain.Clubs}},
+			{{Rank: domain.Seven, Suit: domain.Clubs}},
+		},
+		TrumpIndicator: domain.Card{Rank: domain.Nine, Suit: domain.Hearts},
+		TrumpSuit:      domain.Hearts,
+		FirstAttacker:  0,
+	})
+	var out bytes.Buffer
+	game := newGame(session, firstLegalStrategy(), strings.NewReader("concede\n"), &out, gameOptions{
+		humanSeat: defaultHumanSeat,
+		botSeat:   defaultBotSeat,
+	})
+
+	if err := game.run(context.Background()); err != nil {
+		t.Fatalf("game run returned error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "Result: you lost") {
+		t.Fatalf("output = %q, want human loss", output)
+	}
+}
+
 func TestRunWithOptionsRejectsMissingStrategy(t *testing.T) {
 	var out bytes.Buffer
 

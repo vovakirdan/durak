@@ -28,6 +28,8 @@ const (
 	EventKindRefill
 	// EventKindRoundEnded records the resolved round outcome.
 	EventKindRoundEnded
+	// EventKindConcede records a seat conceding the match.
+	EventKindConcede
 	// EventKindMatchEnded records the completed match outcome.
 	EventKindMatchEnded
 )
@@ -52,6 +54,7 @@ type Event struct {
 	Action     *ActionEvent
 	Refill     *RefillEvent
 	RoundEnded *RoundEndedEvent
+	Concede    *ConcedeEvent
 	MatchEnded *MatchEndedEvent
 }
 
@@ -98,6 +101,12 @@ type RoundEndedEvent struct {
 	SuccessfulDefenses int
 }
 
+// ConcedeEvent records a non-rule user concession.
+type ConcedeEvent struct {
+	Seat   Seat
+	Winner Seat
+}
+
 // MatchEndedEvent records final match outcome.
 type MatchEndedEvent struct {
 	Winner Seat
@@ -128,6 +137,10 @@ func (e Event) Clone() Event {
 		roundEnded := *e.RoundEnded
 		roundEnded.Cards = slices.Clone(roundEnded.Cards)
 		e.RoundEnded = &roundEnded
+	}
+	if e.Concede != nil {
+		concede := *e.Concede
+		e.Concede = &concede
 	}
 	if e.MatchEnded != nil {
 		matchEnded := *e.MatchEnded
@@ -189,6 +202,17 @@ func (m *Match) appendRoundEndedEvent(outcome RoundOutcome, attacker, defender S
 			NextAttacker:       m.attacker,
 			NextDefender:       m.defender,
 			SuccessfulDefenses: m.successfulDefenses,
+		},
+	})
+}
+
+func (m *Match) appendMatchEndedEvent() {
+	m.appendEvent(Event{
+		Kind: EventKindMatchEnded,
+		MatchEnded: &MatchEndedEvent{
+			Winner: m.winner,
+			Loser:  m.loser,
+			Draw:   m.winner == NoSeat,
 		},
 	})
 }

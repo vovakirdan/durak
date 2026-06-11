@@ -82,6 +82,13 @@ func (g *game) run(ctx context.Context) error {
 			if err := g.out.result(); err != nil {
 				return err
 			}
+		case commandConcede:
+			if err := g.session.Concede(ctx, g.humanSeat); err != nil {
+				g.out.printf("Could not concede: %v\n", err)
+				if err := g.out.result(); err != nil {
+					return err
+				}
+			}
 		case commandAction:
 			if err := g.session.ApplyAction(ctx, command.action); err != nil {
 				g.out.printf("Illegal action: %v\n", err)
@@ -138,6 +145,15 @@ func isQuit(input string) bool {
 func isHelp(input string) bool {
 	switch strings.ToLower(strings.TrimSpace(input)) {
 	case "h", "help", "?":
+		return true
+	default:
+		return false
+	}
+}
+
+func isConcede(input string) bool {
+	switch strings.ToLower(strings.TrimSpace(input)) {
+	case "concede", "surrender", "ff":
 		return true
 	default:
 		return false

@@ -25,6 +25,7 @@ CLI commands:
 - `tr <card>` transfers an attack with a same-rank card.
 - `take` takes cards.
 - `done` finishes a defense or pickup.
+- `concede` gives up the current match.
 - `help` prints commands.
 - `quit` exits.
 
