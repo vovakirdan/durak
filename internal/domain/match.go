@@ -88,6 +88,7 @@ type Match struct {
 	roundsStarted      int
 	winner             Seat
 	loser              Seat
+	events             []Event
 }
 
 // NewMatch starts a match from an already validated initial deal.
@@ -109,6 +110,8 @@ func NewMatch(deal *InitialDeal, profile RuleProfile) (*Match, error) {
 		winner:         NoSeat,
 		loser:          NoSeat,
 	}
+	match.appendMatchStartedEvent(profile)
+	match.appendDealEvent(deal)
 	match.updateCompletion()
 	return match, nil
 }
@@ -222,6 +225,18 @@ func (m *Match) Table() []TablePair {
 	return slices.Clone(m.table)
 }
 
+// Events returns pending domain events without mutating the match.
+func (m *Match) Events() []Event {
+	return cloneEvents(m.events)
+}
+
+// DrainEvents returns pending domain events and clears them from the match.
+func (m *Match) DrainEvents() []Event {
+	events := cloneEvents(m.events)
+	m.events = nil
+	return events
+}
+
 func (m *Match) validSeat(seat Seat) bool {
 	return seat >= 0 && int(seat) < len(m.hands)
 }
@@ -256,4 +271,12 @@ func (m *Match) updateCompletion() {
 		m.winner = emptySeats[0]
 		m.loser = nonEmptySeats[0]
 	}
+	m.appendEvent(Event{
+		Kind: EventKindMatchEnded,
+		MatchEnded: &MatchEndedEvent{
+			Winner: m.winner,
+			Loser:  m.loser,
+			Draw:   m.winner == NoSeat,
+		},
+	})
 }

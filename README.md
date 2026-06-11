@@ -11,9 +11,9 @@ plain text and intentionally small; it is a stepping stone before a richer TUI.
 Implemented core pieces:
 
 - 36-card deck, initial deal, trump selection, and first-attacker selection.
-- Two-player match state machine with attack, defense, throw-in, take, refill,
-  and match completion.
-- Application session layer and a simple bot strategy.
+- Two-player match state machine with attack, defense, throw-in, transfer, take,
+  refill, and match completion.
+- Application session layer, in-memory event recorder, and a simple bot strategy.
 - CLI commands by action number or short commands.
 
 CLI commands:

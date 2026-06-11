@@ -18,6 +18,7 @@ func (m *Match) Attack(seat Seat, card Card) error {
 	}
 	m.roundsStarted++
 	m.phase = MatchPhaseDefense
+	m.appendActionEvent(EventKindAttack, Action{Kind: ActionKindAttack, Seat: seat, Card: card})
 	return nil
 }
 
@@ -52,6 +53,12 @@ func (m *Match) Defend(seat Seat, attackIndex int, defense Card) error {
 	if m.allAttacksDefended() {
 		m.phase = MatchPhaseThrowIn
 	}
+	m.appendActionEvent(EventKindDefend, Action{
+		Kind:        ActionKindDefend,
+		Seat:        seat,
+		Card:        defense,
+		AttackIndex: attackIndex,
+	})
 	return nil
 }
 
@@ -67,6 +74,7 @@ func (m *Match) ThrowIn(seat Seat, card Card) error {
 	if m.phase == MatchPhaseThrowIn {
 		m.phase = MatchPhaseDefense
 	}
+	m.appendActionEvent(EventKindThrowIn, Action{Kind: ActionKindThrowIn, Seat: seat, Card: card})
 	return nil
 }
 
@@ -80,6 +88,7 @@ func (m *Match) Transfer(seat Seat, card Card) error {
 		return err
 	}
 	m.attacker, m.defender = m.defender, m.attacker
+	m.appendActionEvent(EventKindTransfer, Action{Kind: ActionKindTransfer, Seat: seat, Card: card})
 	return nil
 }
 
@@ -98,7 +107,9 @@ func (m *Match) FinishDefense(seat Seat) error {
 		return ErrAttackNotDefended
 	}
 
-	m.discard = append(m.discard, tableCards(m.table)...)
+	cards := tableCards(m.table)
+	m.appendActionEvent(EventKindFinishDefense, Action{Kind: ActionKindFinishDefense, Seat: seat})
+	m.discard = append(m.discard, cards...)
 	m.table = nil
 	m.successfulDefenses++
 
@@ -108,6 +119,7 @@ func (m *Match) FinishDefense(seat Seat) error {
 	m.attacker = oldDefender
 	m.defender = nextSeat(m.attacker, len(m.hands))
 	m.phase = MatchPhaseAttack
+	m.appendRoundEndedEvent(RoundOutcomeDefense, oldAttacker, oldDefender, cards)
 	m.updateCompletion()
 	return nil
 }
@@ -125,6 +137,7 @@ func (m *Match) Take(seat Seat) error {
 	}
 
 	m.phase = MatchPhaseTaking
+	m.appendActionEvent(EventKindTake, Action{Kind: ActionKindTake, Seat: seat})
 	return nil
 }
 
@@ -140,7 +153,9 @@ func (m *Match) FinishTake(seat Seat) error {
 		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
 	}
 
-	m.hands[int(m.defender)] = append(m.hands[int(m.defender)], tableCards(m.table)...)
+	cards := tableCards(m.table)
+	m.appendActionEvent(EventKindFinishTake, Action{Kind: ActionKindFinishTake, Seat: seat})
+	m.hands[int(m.defender)] = append(m.hands[int(m.defender)], cards...)
 	m.table = nil
 
 	oldAttacker := m.attacker
@@ -149,76 +164,8 @@ func (m *Match) FinishTake(seat Seat) error {
 	m.attacker = nextSeat(oldDefender, len(m.hands))
 	m.defender = nextSeat(m.attacker, len(m.hands))
 	m.phase = MatchPhaseAttack
+	m.appendRoundEndedEvent(RoundOutcomeTake, oldAttacker, oldDefender, cards)
 	m.updateCompletion()
-	return nil
-}
-
-func (m *Match) validateAttack(seat Seat, card Card) error {
-	if err := m.requireInProgress(); err != nil {
-		return err
-	}
-	if m.phase != MatchPhaseAttack {
-		return fmt.Errorf("%w: attack is allowed only in attack phase", ErrInvalidPhase)
-	}
-	if seat != m.attacker {
-		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
-	}
-	if !m.hasCard(seat, card) {
-		return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
-	}
-	return nil
-}
-
-func (m *Match) validateThrowIn(seat Seat, card Card) error {
-	if err := m.requireInProgress(); err != nil {
-		return err
-	}
-	if m.phase != MatchPhaseThrowIn && m.phase != MatchPhaseTaking {
-		return fmt.Errorf("%w: throw-in requires throw-in or taking phase", ErrInvalidPhase)
-	}
-	if seat != m.attacker {
-		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
-	}
-	if !m.hasCard(seat, card) {
-		return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
-	}
-	if !m.rankOnTable(card.Rank) {
-		return fmt.Errorf("%w: %s", ErrThrowInRankUnavailable, card)
-	}
-	if m.phase != MatchPhaseTaking && !m.canAddSuccessfulDefenseAttack() {
-		return fmt.Errorf("%w: first successful defense attack limit is %d", ErrAttackLimitReached, m.firstSuccessfulDefenseLimit())
-	}
-	return nil
-}
-
-func (m *Match) validateTransfer(seat Seat, card Card) error {
-	if err := m.requireInProgress(); err != nil {
-		return err
-	}
-	if !m.profile.TransferEnabled {
-		return ErrTransferDisabled
-	}
-	if m.phase != MatchPhaseDefense {
-		return fmt.Errorf("%w: transfer requires defense phase", ErrInvalidPhase)
-	}
-	if seat != m.defender {
-		return fmt.Errorf("%w: defender is %d", ErrNotPlayersTurn, m.defender)
-	}
-	if !m.profile.FirstAttackTransferAllowed && m.roundsStarted == 1 {
-		return fmt.Errorf("%w: first attack cannot be transferred", ErrTransferNotAllowed)
-	}
-	if m.hasDefendedTableCards() {
-		return ErrTransferAfterDefense
-	}
-	if !m.hasCard(seat, card) {
-		return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
-	}
-	if !m.rankOnTable(card.Rank) {
-		return fmt.Errorf("%w: %s", ErrTransferRankUnavailable, card)
-	}
-	if !m.canAddSuccessfulDefenseAttack() {
-		return fmt.Errorf("%w: first successful defense attack limit is %d", ErrAttackLimitReached, m.firstSuccessfulDefenseLimit())
-	}
 	return nil
 }
 
@@ -261,36 +208,6 @@ func (m *Match) allAttacksDefended() bool {
 	return true
 }
 
-func (m *Match) hasDefendedTableCards() bool {
-	for _, pair := range m.table {
-		if pair.Defended {
-			return true
-		}
-	}
-	return false
-}
-
-func (m *Match) rankOnTable(rank Rank) bool {
-	for _, pair := range m.table {
-		if pair.Attack.Rank == rank || pair.Defended && pair.Defense.Rank == rank {
-			return true
-		}
-	}
-	return false
-}
-
-func (m *Match) canAddSuccessfulDefenseAttack() bool {
-	limit := m.firstSuccessfulDefenseLimit()
-	return limit == 0 || len(m.table) < limit
-}
-
-func (m *Match) firstSuccessfulDefenseLimit() int {
-	if m.successfulDefenses > 0 || m.profile.FirstSuccessfulDefenseAttackLimit <= 0 {
-		return 0
-	}
-	return m.profile.FirstSuccessfulDefenseAttackLimit
-}
-
 func (m *Match) refill(order ...Seat) {
 	seen := make(map[Seat]bool, len(order))
 	for _, seat := range order {
@@ -298,15 +215,29 @@ func (m *Match) refill(order ...Seat) {
 			continue
 		}
 		seen[seat] = true
-		m.drawUpTo(seat, m.profile.InitialHandSize)
+		drawn := m.drawUpTo(seat, m.profile.InitialHandSize)
+		if drawn > 0 {
+			m.appendEvent(Event{
+				Kind: EventKindRefill,
+				Refill: &RefillEvent{
+					Seat:       seat,
+					Drawn:      drawn,
+					HandSize:   len(m.hands[int(seat)]),
+					StockCount: len(m.stock),
+				},
+			})
+		}
 	}
 }
 
-func (m *Match) drawUpTo(seat Seat, handSize int) {
+func (m *Match) drawUpTo(seat Seat, handSize int) int {
+	drawn := 0
 	for len(m.stock) > 0 && len(m.hands[int(seat)]) < handSize {
 		m.hands[int(seat)] = append(m.hands[int(seat)], m.stock[0])
 		m.stock = m.stock[1:]
+		drawn++
 	}
+	return drawn
 }
 
 func tableCards(table []TablePair) []Card {

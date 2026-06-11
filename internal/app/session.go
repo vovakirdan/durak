@@ -25,19 +25,49 @@ type Strategy interface {
 
 // Session orchestrates one active match for adapters and bots.
 type Session struct {
-	match *domain.Match
+	match        *domain.Match
+	eventSink    EventSink
+	nextSequence uint64
+}
+
+// SessionOptions configures optional session ports.
+type SessionOptions struct {
+	EventSink EventSink
 }
 
 // NewSession wraps an existing domain match.
 func NewSession(match *domain.Match) (*Session, error) {
+	return NewSessionWithOptions(context.Background(), match, SessionOptions{})
+}
+
+// NewSessionWithOptions wraps an existing domain match and emits initial events.
+func NewSessionWithOptions(ctx context.Context, match *domain.Match, options SessionOptions) (*Session, error) {
 	if match == nil {
 		return nil, ErrNilMatch
 	}
-	return &Session{match: match}, nil
+	session := &Session{
+		match:     match,
+		eventSink: options.EventSink,
+	}
+	if err := session.emitPendingEvents(ctx); err != nil {
+		return nil, err
+	}
+	return session, nil
 }
 
 // NewDealtSession creates a match by dealing cards with the provided profile.
 func NewDealtSession(playerCount int, profile domain.RuleProfile, opts domain.DealOptions) (*Session, domain.InitialDeal, error) {
+	return NewDealtSessionWithOptions(context.Background(), playerCount, profile, opts, SessionOptions{})
+}
+
+// NewDealtSessionWithOptions creates a match and emits initial events.
+func NewDealtSessionWithOptions(
+	ctx context.Context,
+	playerCount int,
+	profile domain.RuleProfile,
+	opts domain.DealOptions,
+	sessionOptions SessionOptions,
+) (*Session, domain.InitialDeal, error) {
 	deal, err := domain.DealInitial(playerCount, profile, opts)
 	if err != nil {
 		return nil, domain.InitialDeal{}, err
@@ -48,7 +78,7 @@ func NewDealtSession(playerCount int, profile domain.RuleProfile, opts domain.De
 		return nil, domain.InitialDeal{}, err
 	}
 
-	session, err := NewSession(match)
+	session, err := NewSessionWithOptions(ctx, match, sessionOptions)
 	if err != nil {
 		return nil, domain.InitialDeal{}, err
 	}
@@ -60,7 +90,10 @@ func (s *Session) ApplyAction(ctx context.Context, action domain.Action) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	return s.match.ApplyAction(action)
+	if err := s.match.ApplyAction(action); err != nil {
+		return err
+	}
+	return s.emitPendingEvents(ctx)
 }
 
 // ApplyStrategy asks strategy for one legal action and applies it.
@@ -119,4 +152,26 @@ func (s *Session) handSizes() []int {
 		sizes[seat] = s.match.HandSize(domain.Seat(seat))
 	}
 	return sizes
+}
+
+func (s *Session) emitPendingEvents(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	events := s.match.Events()
+	if s.eventSink == nil {
+		s.match.DrainEvents()
+		return nil
+	}
+	for i, event := range events {
+		if err := s.eventSink.RecordEvent(ctx, Event{
+			Sequence: s.nextSequence + uint64(i) + 1,
+			Domain:   event,
+		}); err != nil {
+			return err
+		}
+	}
+	s.nextSequence += uint64(len(events))
+	s.match.DrainEvents()
+	return nil
 }
