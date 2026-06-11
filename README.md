@@ -13,7 +13,8 @@ Implemented core pieces:
 - 36-card deck, initial deal, trump selection, and first-attacker selection.
 - Two-player match state machine with attack, defense, throw-in, transfer, take,
   refill, and match completion.
-- Application session layer, in-memory event recorder, and a simple bot strategy.
+- Application session layer, event replay/history projection foundation, and a
+  simple bot strategy.
 - CLI commands by action number or short commands, with consecutive matches in
   one local series.
 
