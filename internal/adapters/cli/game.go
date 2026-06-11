@@ -14,7 +14,7 @@ import (
 
 type game struct {
 	session   *app.Session
-	bot       app.Strategy
+	bot       app.PlayerController
 	humanSeat domain.Seat
 	botSeat   domain.Seat
 	scanner   *bufio.Scanner
@@ -36,6 +36,16 @@ type nextMatchFunc func(context.Context) (*app.Session, error)
 type completeMatchFunc func(*app.Session) error
 
 func newGame(session *app.Session, bot app.Strategy, in io.Reader, out io.Writer, options gameOptions) *game {
+	return newGameWithController(session, app.StrategyController{Strategy: bot}, in, out, options)
+}
+
+func newGameWithController(
+	session *app.Session,
+	bot app.PlayerController,
+	in io.Reader,
+	out io.Writer,
+	options gameOptions,
+) *game {
 	return &game{
 		session:   session,
 		bot:       bot,
@@ -183,14 +193,33 @@ func (g *game) runBotTurns(ctx context.Context) error {
 		if activeSeat(&view) != g.botSeat {
 			return nil
 		}
-		action, err := g.session.ApplyStrategy(ctx, g.botSeat, g.bot)
+		turn := app.TurnContext{
+			CanConcede:      true,
+			DecisionContext: g.session.DecisionContext(g.botSeat),
+		}
+		controllerTurn := turn.Clone()
+		decision, err := g.bot.Decide(ctx, &controllerTurn)
 		if err != nil {
 			return err
 		}
-		g.out.printf("Bot: %s\n", formatAction(action))
+		if err := g.session.ApplyPlayerDecision(ctx, g.botSeat, &turn, decision); err != nil {
+			return err
+		}
+		g.out.printf("Bot: %s\n", formatPlayerDecision(decision))
 		if err := g.out.result(); err != nil {
 			return err
 		}
+	}
+}
+
+func formatPlayerDecision(decision app.PlayerDecision) string {
+	switch decision.Kind {
+	case app.PlayerDecisionAction:
+		return formatAction(decision.Action)
+	case app.PlayerDecisionConcede:
+		return "concede"
+	default:
+		return "unknown"
 	}
 }
 

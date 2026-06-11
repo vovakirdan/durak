@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"slices"
 
 	"github.com/vovakirdan/durak/internal/domain"
 )
@@ -160,12 +159,12 @@ func (r *SeriesRunner) runMatch(
 			return turns, fmt.Errorf("%w: seat %d", ErrMissingPlayerController, seat)
 		}
 		turn := r.turnContext(session, seat, matchID, matchNumber, turnNumber)
-		controllerTurn := cloneTurnContext(&turn)
+		controllerTurn := turn.Clone()
 		decision, err := controller.Decide(ctx, &controllerTurn)
 		if err != nil {
 			return turns, err
 		}
-		if err := applyPlayerDecision(ctx, session, seat, &turn, decision); err != nil {
+		if err := session.ApplyPlayerDecision(ctx, seat, &turn, decision); err != nil {
 			return turns, err
 		}
 		turns = append(turns, TurnRecord{
@@ -194,29 +193,6 @@ func (r *SeriesRunner) turnContext(
 		TurnNumber:      turnNumber,
 		CanConcede:      true,
 		DecisionContext: decision,
-	}
-}
-
-func applyPlayerDecision(
-	ctx context.Context,
-	session *Session,
-	seat domain.Seat,
-	turn *TurnContext,
-	decision PlayerDecision,
-) error {
-	switch decision.Kind {
-	case PlayerDecisionAction:
-		if !slices.Contains(turn.LegalActions, decision.Action) {
-			return fmt.Errorf("%w: %v", ErrIllegalAction, decision.Action.Kind)
-		}
-		return session.ApplyAction(ctx, decision.Action)
-	case PlayerDecisionConcede:
-		if !turn.CanConcede {
-			return fmt.Errorf("%w: concede is not available", ErrInvalidPlayerDecision)
-		}
-		return session.Concede(ctx, seat)
-	default:
-		return fmt.Errorf("%w: kind %d", ErrInvalidPlayerDecision, decision.Kind)
 	}
 }
 

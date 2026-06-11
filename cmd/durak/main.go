@@ -38,9 +38,13 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	var seed seedFlag
 	var eventLogPath string
 	var matchID string
+	botName := bot.ControllerSimple
+	rulesName := defaultRulesPreset
 	flags := flag.NewFlagSet("durak", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	flags.Var(&seed, "seed", "deterministic deal seed for replayable games")
+	flags.StringVar(&botName, "bot", botName, "bot controller: simple or random")
+	flags.StringVar(&rulesName, "rules", rulesName, "rule preset: default")
 	flags.StringVar(&eventLogPath, "event-log", "", "append public match events to a JSONL file")
 	flags.StringVar(&matchID, "match-id", "", "base match id for event log; generated when omitted")
 	if err := flags.Parse(args); err != nil {
@@ -50,8 +54,21 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		return fmt.Errorf("unknown argument %q", flags.Arg(0))
 	}
 
+	profile, err := ruleProfile(rulesName)
+	if err != nil {
+		return err
+	}
+	botController, err := bot.NewController(bot.ControllerSpec{
+		Kind:   botName,
+		Seed:   seed.value,
+		Seeded: seed.set,
+	}, domain.Seat(1))
+	if err != nil {
+		return err
+	}
 	options := cli.RunOptions{
-		Strategy: bot.NewSimpleStrategy(),
+		Profile: profile,
+		Bot:     botController,
 	}
 	if seed.set {
 		options.Deal = domain.SeededDealOptions(seed.value)

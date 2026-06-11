@@ -27,6 +27,7 @@
 - **Application/session layer:** coordinates matches and optional in-memory series, accepts player decisions, runs headless games, invokes player controllers, owns active in-memory state, and exposes snapshots to adapters.
 - **CLI adapter:** parses terminal commands, renders text output, and calls the application layer.
 - **Bot adapter:** implements strategy interfaces using read-only decision contexts.
+- **Command wiring:** maps CLI flags to app-facing rule profiles and player controllers without embedding gameplay decisions in executable entrypoints.
 - **Future TUI adapter:** Bubble Tea presentation and input layer over the same application/session layer.
 - **Future SSH adapter:** Wish server/session bridge that hosts TUI sessions remotely.
 - **Future persistence adapter:** event/snapshot storage, match history, ratings, and currency ledgers.
@@ -88,9 +89,11 @@
 
 - **Responsibility:** choose actions for bot-controlled seats.
 - **Internal module structure:**
+  - controller registry for built-in bot/controller kinds.
   - strategy interface.
   - read-only decision context.
   - simple deterministic strategy for MVP.
+  - random legal-action controller for smoke testing.
   - future DSL and AI strategy adapters.
 - **Key dependencies:** domain action/value types only.
 - **Why this boundary exists:** bot decisions must be replaceable and validated through the same path as human actions.
@@ -191,7 +194,8 @@
   - Local development.
   - Future hosted daemon environment.
 - **Config loading approach:**
-  - MVP uses built-in rule presets.
+  - MVP uses built-in rule presets exposed by CLI flags, starting with `-rules default`.
+  - Bot/controller selection is also flag-driven in CLI and arena, starting with `simple` and `random`.
   - Future per-match configuration maps into explicit rule-profile structs.
   - File format is not chosen until external rule config is implemented.
 - **Secret handling approach:**
@@ -248,7 +252,7 @@
 
 ### 13.1 Local CLI Match Flow
 
-1. `cmd/durak` creates a session service with the built-in default rule preset and simple bot strategy.
+1. `cmd/durak` maps CLI flags to a built-in rule preset and bot controller.
 2. Application layer starts a match.
 3. Domain core shuffles/deals using injected randomness and emits setup events.
 4. CLI renders a snapshot.
@@ -256,7 +260,7 @@
 6. CLI parser converts input to a domain action request.
 7. Application layer submits the action to the domain core.
 8. Domain core validates, transitions state, and emits events.
-9. If it is the bot's turn, application layer asks the strategy for an action and submits it through the same validation path.
+9. If it is the bot's turn, CLI asks the configured player controller for a decision and submits it through the same application validation path.
 10. Loop continues until the domain core reports match completion.
 
 ### 13.2 Local Series Match Flow

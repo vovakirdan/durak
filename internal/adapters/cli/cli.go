@@ -18,8 +18,8 @@ const (
 	defaultPlayerCount = 2
 )
 
-// ErrMissingStrategy means CLI wiring did not provide a bot strategy.
-var ErrMissingStrategy = errors.New("missing bot strategy")
+// ErrMissingStrategy means CLI wiring did not provide a bot controller.
+var ErrMissingStrategy = errors.New("missing bot controller")
 
 // RunOptions configures the local CLI adapter without coupling it to concrete
 // bot or deal implementations.
@@ -28,6 +28,7 @@ type RunOptions struct {
 	Profile     domain.RuleProfile
 	Deal        domain.DealOptions
 	Strategy    app.Strategy
+	Bot         app.PlayerController
 	SeriesID    app.SeriesID
 	MatchID     app.MatchID
 	EventStore  app.EventStore
@@ -36,7 +37,11 @@ type RunOptions struct {
 // RunWithOptions starts the local CLI adapter.
 func RunWithOptions(ctx context.Context, in io.Reader, out io.Writer, options *RunOptions) error {
 	runOptions := normalizeRunOptions(options)
-	if runOptions.Strategy == nil {
+	botController := runOptions.Bot
+	if botController == nil && runOptions.Strategy != nil {
+		botController = app.StrategyController{Strategy: runOptions.Strategy}
+	}
+	if botController == nil {
 		return ErrMissingStrategy
 	}
 	if runOptions.EventStore != nil && runOptions.MatchID == "" {
@@ -52,7 +57,7 @@ func RunWithOptions(ctx context.Context, in io.Reader, out io.Writer, options *R
 		return err
 	}
 
-	game := newGame(session, runOptions.Strategy, in, out, gameOptions{
+	game := newGameWithController(session, botController, in, out, gameOptions{
 		humanSeat: defaultHumanSeat,
 		botSeat:   defaultBotSeat,
 		startNext: runner.startMatch,

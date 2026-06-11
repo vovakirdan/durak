@@ -43,6 +43,7 @@ func TestRunArenaCompletesMatches(t *testing.T) {
 	output := out.String()
 	for _, want := range []string{
 		"Arena: seat0=simple seat1=random",
+		"Rules: default",
 		"Matches: 3",
 		"Seed: 42",
 		"Max actions/match: 800",
@@ -157,7 +158,51 @@ func TestRunArenaRejectsUnknownController(t *testing.T) {
 	if err == nil {
 		t.Fatal("run arena returned nil error, want invalid controller")
 	}
-	if !strings.Contains(err.Error(), `p0: unknown arena controller "unknown"`) {
+	if !strings.Contains(err.Error(), `p0: unknown bot controller: "unknown"`) {
 		t.Fatalf("error = %v, want unknown controller error", err)
+	}
+}
+
+func TestRunPlayAcceptsBotAndRuleFlags(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{
+		"-seed", "42",
+		"-bot", "random",
+		"-rules", "default",
+	}, strings.NewReader("q\n"), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run play returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	if !strings.Contains(out.String(), "Durak CLI") {
+		t.Fatalf("output = %q, want CLI header", out.String())
+	}
+}
+
+func TestRunPlayRejectsUnknownBot(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{"-bot", "unknown"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run play returned nil error, want invalid bot")
+	}
+	if !strings.Contains(err.Error(), `unknown bot controller: "unknown"`) {
+		t.Fatalf("error = %v, want unknown bot error", err)
+	}
+}
+
+func TestRunRejectsUnknownRules(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{"-rules", "custom"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run play returned nil error, want invalid rules")
+	}
+	if !strings.Contains(err.Error(), `unknown rules preset "custom"`) {
+		t.Fatalf("error = %v, want unknown rules error", err)
 	}
 }

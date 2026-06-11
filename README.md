@@ -14,7 +14,7 @@ Implemented core pieces:
 - Two-player match state machine with attack, defense, throw-in, transfer, take,
   refill, and match completion.
 - Application session layer, event replay/history projection foundation, and a
-  simple bot strategy.
+  simple controller registry for deterministic and random bots.
 - CLI commands by action number or short commands, with consecutive matches in
   one local series.
 
@@ -45,8 +45,12 @@ make build
 Run a replayable CLI deal with:
 
 ```sh
-go run ./cmd/durak -seed 42
+go run ./cmd/durak -seed 42 -bot simple -rules default
 ```
+
+Available bot controllers are `simple` and `random`. The only rule preset
+currently exposed through CLI flags is `default`; external rule config is a
+future milestone.
 
 Append public match events to a local JSONL log with:
 
@@ -74,7 +78,8 @@ Arena mode is a development tool for match stability checks. It runs
 controllers through the application headless runner and can write public events
 with `-event-log` and `-match-id`. Available controllers are `simple` and
 `random`; `random` chooses uniformly from legal actions and does not evaluate
-the position.
+the position. Arena uses `-rules default` unless another supported preset is
+provided later.
 
 The Makefile keeps Go build caches under `.cache/` so commands work in
 restricted workspaces without writing to the user-level Go cache.

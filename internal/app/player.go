@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/vovakirdan/durak/internal/domain"
@@ -56,6 +57,37 @@ type TurnContext struct {
 	TurnNumber  int
 	CanConcede  bool
 	DecisionContext
+}
+
+// Clone returns a deep copy suitable for giving to untrusted controllers.
+func (t *TurnContext) Clone() TurnContext {
+	return cloneTurnContext(t)
+}
+
+// ApplyPlayerDecision validates and applies a controller decision.
+func (s *Session) ApplyPlayerDecision(
+	ctx context.Context,
+	seat domain.Seat,
+	turn *TurnContext,
+	decision PlayerDecision,
+) error {
+	if turn == nil {
+		return ErrNilTurn
+	}
+	switch decision.Kind {
+	case PlayerDecisionAction:
+		if !slices.Contains(turn.LegalActions, decision.Action) {
+			return fmt.Errorf("%w: %v", ErrIllegalAction, decision.Action.Kind)
+		}
+		return s.ApplyAction(ctx, decision.Action)
+	case PlayerDecisionConcede:
+		if !turn.CanConcede {
+			return fmt.Errorf("%w: concede is not available", ErrInvalidPlayerDecision)
+		}
+		return s.Concede(ctx, seat)
+	default:
+		return fmt.Errorf("%w: kind %d", ErrInvalidPlayerDecision, decision.Kind)
+	}
 }
 
 // StrategyController adapts the existing strategy interface into a player

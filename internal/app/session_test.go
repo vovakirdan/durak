@@ -90,6 +90,43 @@ func TestSessionApplyStrategyRejectsIllegalAction(t *testing.T) {
 	}
 }
 
+func TestSessionApplyPlayerDecisionRejectsNilActionTurn(t *testing.T) {
+	session := mustSession(t, mustMatch(t, [][]domain.Card{
+		{{Rank: domain.Six, Suit: domain.Clubs}},
+		{{Rank: domain.Seven, Suit: domain.Clubs}},
+	}))
+
+	err := session.ApplyPlayerDecision(
+		context.Background(),
+		domain.Seat(0),
+		nil,
+		app.ActionDecision(domain.Action{Kind: domain.ActionKindAttack, Seat: domain.Seat(0)}),
+	)
+	if !errors.Is(err, app.ErrNilTurn) {
+		t.Fatalf("ApplyPlayerDecision error = %v, want ErrNilTurn", err)
+	}
+}
+
+func TestSessionApplyPlayerDecisionRejectsUnavailableConcede(t *testing.T) {
+	session := mustSession(t, mustMatch(t, [][]domain.Card{
+		{{Rank: domain.Six, Suit: domain.Clubs}},
+		{{Rank: domain.Seven, Suit: domain.Clubs}},
+	}))
+
+	err := session.ApplyPlayerDecision(
+		context.Background(),
+		domain.Seat(0),
+		&app.TurnContext{CanConcede: false},
+		app.ConcedeDecision(),
+	)
+	if !errors.Is(err, app.ErrInvalidPlayerDecision) {
+		t.Fatalf("ApplyPlayerDecision error = %v, want ErrInvalidPlayerDecision", err)
+	}
+	if got := session.ViewForSeat(domain.Seat(0)).Phase; got != domain.MatchPhaseAttack {
+		t.Fatalf("Phase = %v, want MatchPhaseAttack", got)
+	}
+}
+
 func TestSessionWithEventStoreEmitsInitialEvents(t *testing.T) {
 	store := app.NewInMemoryEventStore()
 	session, err := app.NewSessionWithOptions(context.Background(), mustMatch(t, [][]domain.Card{
