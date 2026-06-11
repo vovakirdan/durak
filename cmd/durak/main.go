@@ -10,7 +10,6 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/vovakirdan/durak/internal/adapters/bot"
 	"github.com/vovakirdan/durak/internal/adapters/cli"
 	"github.com/vovakirdan/durak/internal/adapters/storage"
 	"github.com/vovakirdan/durak/internal/app"
@@ -38,12 +37,12 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	var seed seedFlag
 	var eventLogPath string
 	var matchID string
-	botName := bot.ControllerSimple
+	botName := normalizePlayerControllerKind("")
 	rulesName := defaultRulesPreset
 	flags := flag.NewFlagSet("durak", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	flags.Var(&seed, "seed", "deterministic deal seed for replayable games")
-	flags.StringVar(&botName, "bot", botName, "bot controller: simple or random")
+	flags.StringVar(&botName, "bot", botName, "bot controller: "+controllerNames())
 	flags.StringVar(&rulesName, "rules", rulesName, "rule preset: default")
 	flags.StringVar(&eventLogPath, "event-log", "", "append public match events to a JSONL file")
 	flags.StringVar(&matchID, "match-id", "", "base match id for event log; generated when omitted")
@@ -58,11 +57,13 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	if err != nil {
 		return err
 	}
-	botController, err := bot.NewController(bot.ControllerSpec{
-		Kind:   botName,
-		Seed:   seed.value,
-		Seeded: seed.set,
-	}, domain.Seat(1))
+	botController, err := newPlayerController(playerControllerConfig{
+		Kind:     botName,
+		Seed:     seed.value,
+		Seeded:   seed.set,
+		Seat:     domain.Seat(1),
+		Fallback: simpleFallbackController(),
+	})
 	if err != nil {
 		return err
 	}

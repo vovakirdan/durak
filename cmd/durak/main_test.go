@@ -28,7 +28,7 @@ func TestRunArenaCompletesMatches(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
 
-	err := run(context.Background(), []string{
+	err := run(t.Context(), []string{
 		"arena",
 		"-matches", "3",
 		"-seed", "42",
@@ -48,6 +48,35 @@ func TestRunArenaCompletesMatches(t *testing.T) {
 		"Seed: 42",
 		"Max actions/match: 800",
 		"Results: seat0=",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestRunArenaAcceptsRawAIController(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(t.Context(), []string{
+		"arena",
+		"-matches", "3",
+		"-seed", "42",
+		"-max-actions", "800",
+		"-p0", "simple",
+		"-p1", "ai-raw-mock",
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run arena returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"Arena: seat0=simple seat1=ai-raw-mock",
+		"Matches: 3",
+		"Results: seat0=",
+		"Raw AI: attempts=",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("output = %q, want %q", output, want)
@@ -158,7 +187,7 @@ func TestRunArenaRejectsUnknownController(t *testing.T) {
 	if err == nil {
 		t.Fatal("run arena returned nil error, want invalid controller")
 	}
-	if !strings.Contains(err.Error(), `p0: unknown bot controller: "unknown"`) {
+	if !strings.Contains(err.Error(), `p0: unknown player controller: "unknown"`) {
 		t.Fatalf("error = %v, want unknown controller error", err)
 	}
 }
@@ -189,7 +218,7 @@ func TestRunPlayRejectsUnknownBot(t *testing.T) {
 	if err == nil {
 		t.Fatal("run play returned nil error, want invalid bot")
 	}
-	if !strings.Contains(err.Error(), `unknown bot controller: "unknown"`) {
+	if !strings.Contains(err.Error(), `unknown player controller: "unknown"`) {
 		t.Fatalf("error = %v, want unknown bot error", err)
 	}
 }

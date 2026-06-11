@@ -5,8 +5,9 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"sync"
 
-	"github.com/vovakirdan/durak/internal/adapters/bot"
+	"github.com/vovakirdan/durak/internal/adapters/ai"
 	"github.com/vovakirdan/durak/internal/adapters/storage"
 	"github.com/vovakirdan/durak/internal/app"
 	"github.com/vovakirdan/durak/internal/domain"
@@ -30,10 +31,12 @@ type arenaOptions struct {
 }
 
 type arenaSummary struct {
-	matches int
-	turns   int
-	wins    map[domain.Seat]int
-	draws   int
+	matches       int
+	turns         int
+	wins          map[domain.Seat]int
+	draws         int
+	rawAIAttempts int
+	rawAIInvalid  int
 }
 
 func runArena(ctx context.Context, args []string, out, errOut io.Writer) error {
@@ -41,11 +44,12 @@ func runArena(ctx context.Context, args []string, out, errOut io.Writer) error {
 	if err != nil {
 		return err
 	}
-	result, err := runArenaMatches(ctx, &options)
+	rawAIStats := &arenaRawAIStats{}
+	result, err := runArenaMatches(ctx, &options, rawAIStats)
 	if err != nil {
 		return err
 	}
-	return writeArenaSummary(out, &options, summarizeArena(result))
+	return writeArenaSummary(out, &options, summarizeArena(result, rawAIStats.summary()))
 }
 
 func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
@@ -53,8 +57,8 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 		matches:    defaultArenaMatches,
 		seed:       defaultArenaSeed,
 		maxActions: defaultArenaMaxActions,
-		player0:    bot.ControllerSimple,
-		player1:    bot.ControllerSimple,
+		player0:    normalizePlayerControllerKind(""),
+		player1:    normalizePlayerControllerKind(""),
 		rules:      defaultRulesPreset,
 	}
 	flags := flag.NewFlagSet("durak arena", flag.ContinueOnError)
@@ -64,8 +68,8 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	flags.IntVar(&options.maxActions, "max-actions", options.maxActions, "maximum accepted actions per match")
 	flags.StringVar(&options.eventLogPath, "event-log", "", "append public arena events to a JSONL file")
 	flags.StringVar(&options.baseMatchID, "match-id", "", "base match id for event log")
-	flags.StringVar(&options.player0, "p0", options.player0, "seat 0 controller: simple or random")
-	flags.StringVar(&options.player1, "p1", options.player1, "seat 1 controller: simple or random")
+	flags.StringVar(&options.player0, "p0", options.player0, "seat 0 controller: "+controllerNames())
+	flags.StringVar(&options.player1, "p1", options.player1, "seat 1 controller: "+controllerNames())
 	flags.StringVar(&options.rules, "rules", options.rules, "rule preset: default")
 	if err := flags.Parse(args); err != nil {
 		return arenaOptions{}, err
@@ -79,10 +83,10 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	if options.maxActions <= 0 {
 		return arenaOptions{}, fmt.Errorf("max-actions must be positive")
 	}
-	if err := bot.ValidateControllerKind(options.player0); err != nil {
+	if err := validatePlayerControllerKind(options.player0); err != nil {
 		return arenaOptions{}, fmt.Errorf("p0: %w", err)
 	}
-	if err := bot.ValidateControllerKind(options.player1); err != nil {
+	if err := validatePlayerControllerKind(options.player1); err != nil {
 		return arenaOptions{}, fmt.Errorf("p1: %w", err)
 	}
 	if _, err := ruleProfile(options.rules); err != nil {
@@ -91,7 +95,11 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	return options, nil
 }
 
-func runArenaMatches(ctx context.Context, options *arenaOptions) (app.SeriesRunResult, error) {
+func runArenaMatches(
+	ctx context.Context,
+	options *arenaOptions,
+	rawAITraceSink ai.RawCommandTraceSink,
+) (app.SeriesRunResult, error) {
 	profile, err := ruleProfile(options.rules)
 	if err != nil {
 		return app.SeriesRunResult{}, err
@@ -114,19 +122,23 @@ func runArenaMatches(ctx context.Context, options *arenaOptions) (app.SeriesRunR
 		eventStore = store
 	}
 
-	player0, err := bot.NewController(bot.ControllerSpec{
-		Kind:   options.player0,
-		Seed:   options.seed,
-		Seeded: true,
-	}, domain.Seat(0))
+	player0, err := newPlayerController(playerControllerConfig{
+		Kind:      options.player0,
+		Seed:      options.seed,
+		Seeded:    true,
+		Seat:      domain.Seat(0),
+		TraceSink: rawAITraceSink,
+	})
 	if err != nil {
 		return app.SeriesRunResult{}, err
 	}
-	player1, err := bot.NewController(bot.ControllerSpec{
-		Kind:   options.player1,
-		Seed:   options.seed,
-		Seeded: true,
-	}, domain.Seat(1))
+	player1, err := newPlayerController(playerControllerConfig{
+		Kind:      options.player1,
+		Seed:      options.seed,
+		Seeded:    true,
+		Seat:      domain.Seat(1),
+		TraceSink: rawAITraceSink,
+	})
 	if err != nil {
 		return app.SeriesRunResult{}, err
 	}
@@ -148,11 +160,13 @@ func runArenaMatches(ctx context.Context, options *arenaOptions) (app.SeriesRunR
 	return runner.Run(ctx, options.matches)
 }
 
-func summarizeArena(result app.SeriesRunResult) arenaSummary {
+func summarizeArena(result app.SeriesRunResult, rawAI arenaRawAISummary) arenaSummary {
 	summary := arenaSummary{
-		matches: len(result.Matches),
-		turns:   len(result.Turns),
-		wins:    make(map[domain.Seat]int),
+		matches:       len(result.Matches),
+		turns:         len(result.Turns),
+		wins:          make(map[domain.Seat]int),
+		rawAIAttempts: rawAI.attempts,
+		rawAIInvalid:  rawAI.invalid,
 	}
 	for _, match := range result.Matches {
 		if match.Draw {
@@ -179,5 +193,52 @@ func writeArenaSummary(out io.Writer, options *arenaOptions, summary arenaSummar
 		summary.wins[domain.Seat(1)],
 		summary.draws,
 	)
+	if err != nil {
+		return err
+	}
+	if summary.rawAIAttempts == 0 {
+		return nil
+	}
+	_, err = fmt.Fprintf(
+		out,
+		"Raw AI: attempts=%d invalid=%d\n",
+		summary.rawAIAttempts,
+		summary.rawAIInvalid,
+	)
 	return err
+}
+
+type arenaRawAIStats struct {
+	mu       sync.Mutex
+	attempts int
+	invalid  int
+}
+
+type arenaRawAISummary struct {
+	attempts int
+	invalid  int
+}
+
+func (s *arenaRawAIStats) RecordRawCommandTrace(trace *ai.RawCommandTrace) {
+	if s == nil || trace == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.attempts++
+	if trace.Err != "" {
+		s.invalid++
+	}
+}
+
+func (s *arenaRawAIStats) summary() arenaRawAISummary {
+	if s == nil {
+		return arenaRawAISummary{}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return arenaRawAISummary{
+		attempts: s.attempts,
+		invalid:  s.invalid,
+	}
 }

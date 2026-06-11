@@ -48,9 +48,11 @@ Run a replayable CLI deal with:
 go run ./cmd/durak -seed 42 -bot simple -rules default
 ```
 
-Available bot controllers are `simple` and `random`. The only rule preset
-currently exposed through CLI flags is `default`; external rule config is a
-future milestone.
+Available player controllers for the opponent are `simple`, `random`, and
+`ai-raw-mock`. The AI mock is a deterministic local tester that returns raw
+text commands through the shared parser; real model providers are a future
+milestone. The only rule preset currently exposed through CLI flags is
+`default`; external rule config is also a future milestone.
 
 Append public match events to a local JSONL log with:
 
@@ -76,10 +78,11 @@ go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500 -p0 simple -p1 r
 
 Arena mode is a development tool for match stability checks. It runs
 controllers through the application headless runner and can write public events
-with `-event-log` and `-match-id`. Available controllers are `simple` and
-`random`; `random` chooses uniformly from legal actions and does not evaluate
-the position. Arena uses `-rules default` unless another supported preset is
-provided later.
+with `-event-log` and `-match-id`. Available controllers are `simple`,
+`random`, and `ai-raw-mock`; `random` chooses uniformly from legal actions and
+does not evaluate the position, while `ai-raw-mock` intentionally exercises raw
+command parsing and then retries with legal text commands. Arena uses
+`-rules default` unless another supported preset is provided later.
 
 The Makefile keeps Go build caches under `.cache/` so commands work in
 restricted workspaces without writing to the user-level Go cache.

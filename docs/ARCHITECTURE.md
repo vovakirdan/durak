@@ -26,7 +26,9 @@
 - **Domain core:** cards, deck, rule profile, match state, legal actions, state transitions, events, and outcome detection.
 - **Application/session layer:** coordinates matches and optional in-memory series, accepts player decisions, runs headless games, invokes player controllers, owns active in-memory state, and exposes snapshots to adapters.
 - **CLI adapter:** parses terminal commands, renders text output, and calls the application layer.
+- **Text command adapter:** parses shared terminal-style player commands for CLI humans and raw-command AI testers.
 - **Bot adapter:** implements strategy interfaces using read-only decision contexts.
+- **AI adapter:** defines provider-neutral AI client contracts and adapts raw AI command responses into player decisions.
 - **Command wiring:** maps CLI flags to app-facing rule profiles and player controllers without embedding gameplay decisions in executable entrypoints.
 - **Future TUI adapter:** Bubble Tea presentation and input layer over the same application/session layer.
 - **Future SSH adapter:** Wish server/session bridge that hosts TUI sessions remotely.
@@ -39,7 +41,14 @@
 - **Type:** CLI.
 - **Primary responsibilities:** start a game, show visible state, parse commands, print validation errors, and drive the local human-vs-bot loop.
 - **Internal structure:** command parser, renderer, and loop runner.
-- **Key dependencies:** application/session layer only.
+- **Key dependencies:** application/session layer and text command adapter only.
+
+### Raw AI Command Tester
+
+- **Type:** headless player-controller adapter.
+- **Primary responsibilities:** build a seat-scoped prompt, ask an AI-like client for a text command, parse that command through the shared text command adapter, and return a normal player decision.
+- **Internal structure:** prompt builder, provider-neutral AI client port, raw command controller, and trace records for raw response and parse result.
+- **Key dependencies:** application/session layer and text command adapter. It must not call CLI render loops or mutate sessions directly.
 
 ### Future Bubble Tea TUI
 
@@ -98,6 +107,17 @@
 - **Key dependencies:** domain action/value types only.
 - **Why this boundary exists:** bot decisions must be replaceable and validated through the same path as human actions.
 
+### AI Player Adapter Layer
+
+- **Responsibility:** adapt external or mock AI clients into `PlayerController` implementations.
+- **Internal module structure:**
+  - provider-neutral `Client` interface.
+  - raw-command prompt/response models.
+  - raw command controller for parser and validation stress tests.
+  - future structured AI controller that selects action IDs or decisions directly.
+- **Key dependencies:** application/session types, domain value types, and text command parsing. Provider SDKs must stay behind this adapter when introduced.
+- **Why this boundary exists:** AI players should be replaceable and observable without coupling the game core or CLI/TUI loops to model providers.
+
 ### Persistence Layer
 
 - **Responsibility:** durable match history, replay/training data, player profiles, rating state, and currency ledger.
@@ -116,6 +136,7 @@
   - `SessionService`: starts matches, accepts actions, advances bot turns, returns render snapshots.
   - `Series`: links optional consecutive matches at one table through stable seat order and completed match results.
   - `PlayerController`: receives a read-only turn context and returns a player decision such as a legal action or concession.
+  - `ai.Client`: receives a provider-neutral turn prompt and returns a raw or structured AI response.
   - `SeriesRunner`: executes a series without CLI/TUI ownership and records a compact decision trace.
   - `Strategy`: receives decision context and returns a proposed action.
   - `EventStore`: appends structured domain/application events for one match stream.
@@ -125,6 +146,7 @@
   - CLI/TUI/SSH call application services.
   - Application services call domain core.
   - Player controllers return decisions; strategy-based controllers adapt bot strategies into ordinary player decisions.
+  - Raw AI command controllers parse model text through the same text command adapter used by CLI, then return ordinary player decisions.
   - Bot strategies return proposed domain actions and remain replaceable by DSL, heuristic, AI, or external-process engines later.
   - Persistence consumes application event streams and stores snapshots/records later.
 - **API/event/schema strategy:**
@@ -229,14 +251,16 @@
   - `cmd/durakd`: future SSH daemon executable.
   - `internal/domain`: framework-free game domain.
   - `internal/app`: session/application services and ports.
-  - `internal/adapters/cli`: CLI parser/renderer/runner.
+  - `internal/adapters/cli`: CLI renderer and interactive loop runner.
+  - `internal/adapters/textcmd`: shared terminal-style player command parsing.
   - `internal/adapters/bot`: bot strategy implementations.
+  - `internal/adapters/ai`: provider-neutral AI player adapters.
   - `internal/adapters/tui`: future Bubble Tea UI.
   - `internal/adapters/ssh`: future Wish integration.
   - `internal/adapters/storage`: future persistence adapters.
   - `docs`: planning and architecture documents.
-- **Recommended initial layout for MVP:**
-  - Start only with `cmd/durak`, `internal/domain`, `internal/app`, `internal/adapters/cli`, and `internal/adapters/bot`.
+- **Recommended current layout for MVP:**
+  - Keep active implementation in `cmd/durak`, `internal/domain`, `internal/app`, `internal/adapters/cli`, `internal/adapters/textcmd`, `internal/adapters/bot`, `internal/adapters/ai`, and `internal/adapters/storage`.
   - Add future adapter directories only when those milestones begin.
 
 ## 12. Deployment Shape
@@ -257,7 +281,7 @@
 3. Domain core shuffles/deals using injected randomness and emits setup events.
 4. CLI renders a snapshot.
 5. Human enters a command.
-6. CLI parser converts input to a domain action request.
+6. The text command adapter converts input to a command or domain action request.
 7. Application layer submits the action to the domain core.
 8. Domain core validates, transitions state, and emits events.
 9. If it is the bot's turn, CLI asks the configured player controller for a decision and submits it through the same application validation path.
@@ -281,7 +305,16 @@
 5. Runner stops with a typed error if a controller is missing, returns an illegal decision, or exceeds the action limit.
 6. Runner returns completed match summaries plus a compact decision trace for smoke tests and future analysis.
 
-### 13.4 Future SSH Match Flow
+### 13.4 Raw AI Command Flow
+
+1. Runner or a future table service invokes a raw AI `PlayerController` for the active AI seat.
+2. The controller builds a prompt from the copied `TurnContext`, including visible state, private hand, and legal action command hints.
+3. The configured `AIClient` returns one raw text command.
+4. The controller parses the command through `internal/adapters/textcmd`.
+5. Parser errors, non-player commands, or illegal choices are returned as controller errors and recorded in controller trace for diagnostics.
+6. Valid action or concession commands become `PlayerDecision` values and continue through `Session.ApplyPlayerDecision`.
+
+### 13.5 Future SSH Match Flow
 
 1. `durakd` accepts an SSH session through Wish.
 2. SSH adapter maps the connection to a player identity.
@@ -291,7 +324,7 @@
 6. Match session serializes commands and mutates game state in order.
 7. Persistence adapter records events and final summaries once enabled.
 
-### 13.5 Future Match Completion Persistence Flow
+### 13.6 Future Match Completion Persistence Flow
 
 1. Domain core emits match-end event.
 2. Application layer builds match summary and requested rating/currency effects.
@@ -305,6 +338,7 @@
 - Active match state is in memory until persistence begins.
 - The target architecture must support more than two seats even if the first implementation runs two seats only.
 - Match event design should anticipate replay, statistics, and AI training.
+- Raw AI command testing is a QA/stability tool first; provider-backed structured AI players are a later integration layer.
 
 ## 15. Open Questions / Risks
 
@@ -315,3 +349,4 @@
 - **Series durability:** current series/table state is in memory only; daemon mode must persist series metadata and completed match summaries before supporting hosted consecutive tables.
 - **SSH concurrency:** multiplayer daemon must serialize per-match mutations; do not let multiple sessions mutate match state directly.
 - **Economy and rating:** rating/currency updates should be ledger-like and transactional when introduced.
+- **AI provider execution:** real model providers need timeout, retry, redaction, and secret-handling rules before they are enabled outside mock/local tests.

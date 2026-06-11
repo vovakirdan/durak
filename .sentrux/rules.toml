@@ -15,7 +15,9 @@ order = 0
 name = "adapters"
 paths = [
   "internal/adapters/cli/*",
+  "internal/adapters/textcmd/*",
   "internal/adapters/bot/*",
+  "internal/adapters/ai/*",
   "internal/adapters/storage/*",
 ]
 order = 1
@@ -65,6 +67,46 @@ to = "internal/adapters/bot/*"
 reason = "CLI must not coordinate bot strategy directly; wiring belongs in cmd or app."
 
 [[boundaries]]
+from = "internal/adapters/cli/*"
+to = "internal/adapters/ai/*"
+reason = "CLI must not coordinate AI players directly; wiring belongs in cmd or app."
+
+[[boundaries]]
 from = "internal/adapters/bot/*"
 to = "internal/adapters/cli/*"
 reason = "Bot strategies must stay independent from presentation."
+
+[[boundaries]]
+from = "internal/adapters/bot/*"
+to = "internal/adapters/ai/*"
+reason = "Bot strategies must stay independent from AI provider adapters."
+
+[[boundaries]]
+from = "internal/adapters/ai/*"
+to = "internal/adapters/cli/*"
+reason = "AI player adapters must not depend on interactive CLI loops or rendering."
+
+[[boundaries]]
+from = "internal/adapters/ai/*"
+to = "internal/adapters/bot/*"
+reason = "AI player adapters should not depend on concrete bot strategies; compose fallbacks through app.PlayerController."
+
+[[boundaries]]
+from = "internal/adapters/textcmd/*"
+to = "internal/adapters/cli/*"
+reason = "Shared command parsing must not depend on CLI rendering or loops."
+
+[[boundaries]]
+from = "internal/adapters/textcmd/*"
+to = "internal/adapters/bot/*"
+reason = "Shared command parsing must not depend on bot strategy implementations."
+
+[[boundaries]]
+from = "internal/adapters/textcmd/*"
+to = "internal/adapters/ai/*"
+reason = "Shared command parsing must not depend on AI player adapters."
+
+[[boundaries]]
+from = "internal/adapters/textcmd/*"
+to = "internal/adapters/storage/*"
+reason = "Shared command parsing must not depend on persistence adapters."

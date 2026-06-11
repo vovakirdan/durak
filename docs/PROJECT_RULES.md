@@ -36,11 +36,13 @@ Status: Approved.
   - `internal/domain`
   - `internal/app`
   - `internal/adapters/cli`
+  - `internal/adapters/textcmd`
   - `internal/adapters/bot`
+  - `internal/adapters/ai`
+  - `internal/adapters/storage`
 - **Mandatory:** Future adapter directories are added only when the milestone begins:
   - `internal/adapters/tui`
   - `internal/adapters/ssh`
-  - `internal/adapters/storage`
 - **Mandatory:** `cmd/*` packages contain wiring and executable entrypoints only.
 - **Mandatory:** `internal/domain` owns game concepts and rule execution.
 - **Mandatory:** `internal/app` owns orchestration, active sessions, ports, and adapter-facing use cases.
@@ -99,8 +101,16 @@ Status: Approved.
 - **Purpose:** MVP user interaction through stdin/stdout.
 - **Mandatory:** CLI parsing errors and domain validation errors must be distinct.
 - **Mandatory:** CLI output must not be the source of truth for game state.
+- **Mandatory:** Shared player command parsing belongs in `internal/adapters/textcmd`, not in CLI-only loop code.
 - **Default:** Prefer clear text commands over CLI frameworks until there are real subcommands to manage.
 - **Default:** User-facing errors should say what action is legal now when practical.
+
+### Text Command Adapter
+
+- **Purpose:** shared terminal-style player command parsing for CLI humans and raw-command AI testers.
+- **Mandatory:** It may depend on `internal/app` and `internal/domain`, but not on CLI rendering, bot strategies, AI providers, storage, or TUI/SSH code.
+- **Mandatory:** It converts text into parsed command intent only; it must not mutate sessions or own game rules.
+- **Default:** Keep command aliases compact and stable because AI prompts and user documentation may depend on them.
 
 ### Bot Adapter
 
@@ -109,6 +119,15 @@ Status: Approved.
 - **Mandatory:** Bot strategies must not mutate game state.
 - **Mandatory:** Bot actions must be validated by domain/application logic.
 - **Default:** The first bot should be deterministic enough to test, with randomness injected only when explicitly part of the strategy.
+
+### AI Adapter
+
+- **Purpose:** adapt mock, local, or future provider-backed AI players into application `PlayerController` implementations.
+- **Mandatory:** AI adapters must not import CLI loop/rendering packages or mutate sessions directly.
+- **Mandatory:** Raw AI responses must be parsed or validated before becoming `PlayerDecision` values.
+- **Mandatory:** Provider SDKs, credentials, prompts, and transport details must stay out of domain and application packages.
+- **Default:** Start with mock/local AI clients before adding network providers.
+- **Review trigger:** A real AI provider integration requires timeout, retry, redaction, and secret-handling review.
 
 ### Future TUI Adapter
 
@@ -223,3 +242,4 @@ Status: Approved.
 - **Approved:** No repository-wide coverage threshold for MVP; domain coverage is risk-based and strict.
 - **Approved:** Go target version is `1.26.1`.
 - **Approved:** `internal/adapters/storage` may be used for the event-history milestone.
+- **Approved:** `internal/adapters/textcmd` and `internal/adapters/ai` may be used for the raw AI command tester milestone.

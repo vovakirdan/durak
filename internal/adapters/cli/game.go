@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/vovakirdan/durak/internal/adapters/textcmd"
 	"github.com/vovakirdan/durak/internal/app"
 	"github.com/vovakirdan/durak/internal/domain"
 )
@@ -91,7 +92,7 @@ func (g *game) run(ctx context.Context) error {
 			return g.scanner.Err()
 		}
 
-		command, err := parseCommand(g.scanner.Text(), &decision)
+		command, err := textcmd.Parse(g.scanner.Text(), &decision)
 		if err != nil {
 			g.out.printf("Invalid command: %v\n", err)
 			if err := g.out.result(); err != nil {
@@ -100,24 +101,24 @@ func (g *game) run(ctx context.Context) error {
 			continue
 		}
 
-		switch command.kind {
-		case commandQuit:
+		switch command.Kind {
+		case textcmd.KindQuit:
 			g.out.println("Bye.")
 			return g.out.result()
-		case commandHelp:
+		case textcmd.KindHelp:
 			g.renderer.writeHelp(g.out)
 			if err := g.out.result(); err != nil {
 				return err
 			}
-		case commandConcede:
+		case textcmd.KindConcede:
 			if err := g.session.Concede(ctx, g.humanSeat); err != nil {
 				g.out.printf("Could not concede: %v\n", err)
 				if err := g.out.result(); err != nil {
 					return err
 				}
 			}
-		case commandAction:
-			if err := g.session.ApplyAction(ctx, command.action); err != nil {
+		case textcmd.KindAction:
+			if err := g.session.ApplyAction(ctx, command.Action); err != nil {
 				g.out.printf("Illegal action: %v\n", err)
 				if err := g.out.result(); err != nil {
 					return err
@@ -169,10 +170,10 @@ func (g *game) promptNextMatch(ctx context.Context) (bool, error) {
 			g.out.printf("Starting match #%d.\n", g.matchNo)
 			g.writeMatchBanner()
 			return true, g.out.result()
-		case isQuit(input):
+		case textcmd.IsQuit(input):
 			g.out.println("Bye.")
 			return false, g.out.result()
-		case isHelp(input):
+		case textcmd.IsHelp(input):
 			g.out.println("After a result, press Enter or type next to start another match; type quit to exit.")
 			g.renderer.writeHelp(g.out)
 			if err := g.out.result(); err != nil {
@@ -236,33 +237,6 @@ func activeSeat(view *app.SeatView) domain.Seat {
 		return domain.NoSeat
 	default:
 		return domain.NoSeat
-	}
-}
-
-func isQuit(input string) bool {
-	switch strings.ToLower(strings.TrimSpace(input)) {
-	case "q", "quit", "exit":
-		return true
-	default:
-		return false
-	}
-}
-
-func isHelp(input string) bool {
-	switch strings.ToLower(strings.TrimSpace(input)) {
-	case "h", "help", "?":
-		return true
-	default:
-		return false
-	}
-}
-
-func isConcede(input string) bool {
-	switch strings.ToLower(strings.TrimSpace(input)) {
-	case "concede", "surrender", "ff":
-		return true
-	default:
-		return false
 	}
 }
 
