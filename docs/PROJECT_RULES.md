@@ -31,7 +31,7 @@ Status: Approved.
 
 ## 4. Repository Conventions
 
-- **Mandatory:** Initial MVP code belongs only in:
+- **Mandatory:** Initial core/CLI code belongs only in:
   - `cmd/durak`
   - `internal/domain`
   - `internal/app`
@@ -222,3 +222,4 @@ Status: Approved.
 - **Approved:** Lower LOC and complexity thresholds remain review triggers, not hard limits.
 - **Approved:** No repository-wide coverage threshold for MVP; domain coverage is risk-based and strict.
 - **Approved:** Go target version is `1.26.1`.
+- **Approved:** `internal/adapters/storage` may be used for the event-history milestone.

@@ -92,15 +92,16 @@
 - **Key dependencies:** domain action/value types only.
 - **Why this boundary exists:** bot decisions must be replaceable and validated through the same path as human actions.
 
-### Future Persistence Layer
+### Persistence Layer
 
 - **Responsibility:** durable match history, replay/training data, player profiles, rating state, and currency ledger.
 - **Internal module structure:**
-  - event store.
+  - JSONL event store for the first local public-history milestone.
+  - SQLite event store for future daemon/history mode.
   - snapshot store if replay from full event history becomes expensive.
   - repositories for players, ratings, and currency.
   - migration runner.
-- **Key dependencies:** storage library chosen at persistence milestone.
+- **Key dependencies:** standard library for JSONL; storage library chosen later for SQLite.
 - **Why this boundary exists:** persistence should consume stable events and application commands without owning game rules.
 
 ## 6. Interfaces and Boundaries
@@ -121,7 +122,9 @@
   - Application events include match id and sequence number around structured domain event payloads.
   - Stable serialized events use a JSON envelope: `schema_version`, `match_id`, `sequence`, `kind`, `visibility`, and `payload`.
   - Current serialized events are `visibility=public`; future private events must be explicit rather than mixed into public replay data.
-  - Durable adapters may add record metadata such as insertion timestamp outside the envelope when a real store is introduced.
+  - Durable adapters may add record metadata such as insertion timestamp outside the envelope when a database store is introduced.
+  - JSONL stores one event envelope per line and is intended for local debugging, replay smoke tests, and export.
+  - SQLite remains the target store for indexed history, projections, ratings, currency, and daemon concurrency.
 - **Compatibility notes across parts:**
   - Domain core imports no adapter packages.
   - Adapters may depend inward on application/domain packages.
@@ -134,12 +137,18 @@
   - Domain core owns card, deck, rule, match, round, table, action, and event semantics.
   - Application/session layer owns active in-memory match sessions.
   - Future persistence owns durable records, not live rule execution.
+- **Event stream roles:**
+  - Public events are safe for visible history, public replay, and local JSONL export.
+  - Future internal events may include hidden state such as hands, stock order, seeds, or decision context for exact resume and model training.
+  - Snapshots are derived checkpoints for faster resume/replay; they are not the source of truth.
+  - Projections/read models are derived tables for statistics, scoring, ratings, and global analytics; they must be rebuildable from event streams.
 - **Primary storage responsibilities:**
-  - MVP: no durable storage.
-  - First persistence milestone: append match events and store completed match summaries.
+  - MVP before event-history milestone: no durable storage.
+  - First event-history milestone: append public match events to JSONL.
+  - First persistence milestone: append match events to SQLite and store completed match summaries.
   - Later milestones: player profile, rating records, and currency ledger entries.
 - **Transaction boundaries:**
-  - MVP: no database transactions.
+  - JSONL: single-process append with batch validation before write; no cross-record transaction guarantees.
   - Future match completion transaction should persist final match events, summary, rating update, and currency ledger effects consistently.
 - **Caching or queue usage:** none for MVP. Do not introduce cache or queue until daemon operations create a concrete need.
 
@@ -259,7 +268,7 @@
 
 ## 15. Open Questions / Risks
 
-- **Storage tool choice:** choose SQLite driver, query approach, and migration tool only when persistence work begins.
+- **Storage tool choice:** JSONL is accepted only as the first local event-history adapter; choose SQLite driver, query approach, and migration tool when indexed persistence begins.
 - **Event format:** JSON is the first candidate, but the durable event schema needs its own design before history/statistics work.
 - **Event-store failure semantics:** current session code keeps events pending when append fails, but durable persistence must explicitly choose retry/blocking, rollback, or command/event transaction behavior before daemon mode relies on it.
 - **Transfer rules:** default preset includes transfer behavior, but implementation can be phased after the base podkidnoy loop if needed.

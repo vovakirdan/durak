@@ -16,6 +16,7 @@ name = "adapters"
 paths = [
   "internal/adapters/cli/*",
   "internal/adapters/bot/*",
+  "internal/adapters/storage/*",
 ]
 order = 1
 
