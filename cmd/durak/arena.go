@@ -96,12 +96,8 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	if options.maxActions <= 0 {
 		return arenaOptions{}, fmt.Errorf("max-actions must be positive")
 	}
-	profile, err := ruleProfile(options.rules)
-	if err != nil {
+	if _, err := matchConfig(options.rules, options.seats); err != nil {
 		return arenaOptions{}, err
-	}
-	if options.seats < 2 || options.seats > profile.MaxPlayers {
-		return arenaOptions{}, fmt.Errorf("seats must be in range 2..%d", profile.MaxPlayers)
 	}
 	for seat := range options.seats {
 		if err := validatePlayerControllerKind(options.players[seat]); err != nil {
@@ -116,7 +112,11 @@ func runArenaMatches(
 	options *arenaOptions,
 	rawAITraceSink ai.RawCommandTraceSink,
 ) (app.SeriesRunResult, error) {
-	profile, err := ruleProfile(options.rules)
+	config, err := matchConfig(options.rules, options.seats)
+	if err != nil {
+		return app.SeriesRunResult{}, err
+	}
+	profile, err := config.RuleProfile()
 	if err != nil {
 		return app.SeriesRunResult{}, err
 	}

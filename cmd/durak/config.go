@@ -1,21 +1,11 @@
 package main
 
 import (
-	"fmt"
-
-	"github.com/vovakirdan/durak/internal/domain"
+	"github.com/vovakirdan/durak/internal/app"
 )
 
-const defaultRulesPreset = "default"
+const defaultRulesPreset = app.RulePresetDefault
 
-func ruleProfile(name string) (domain.RuleProfile, error) {
-	if name == "" {
-		name = defaultRulesPreset
-	}
-	switch name {
-	case defaultRulesPreset:
-		return domain.DefaultRuleProfile(), nil
-	default:
-		return domain.RuleProfile{}, fmt.Errorf("unknown rules preset %q", name)
-	}
+func matchConfig(name string, playerCount int) (app.MatchConfig, error) {
+	return app.NewMatchConfig(name, playerCount)
 }

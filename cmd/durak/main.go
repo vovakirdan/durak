@@ -66,12 +66,13 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		return err
 	}
 
-	profile, err := ruleProfile(rulesName)
+	config, err := matchConfig(rulesName, seats)
 	if err != nil {
 		return err
 	}
-	if seats < 2 || seats > profile.MaxPlayers {
-		return fmt.Errorf("seats must be in range 2..%d", profile.MaxPlayers)
+	profile, err := config.RuleProfile()
+	if err != nil {
+		return err
 	}
 	if humanSeat < 0 || humanSeat >= seats {
 		return fmt.Errorf("human-seat must be in range 0..%d", seats-1)

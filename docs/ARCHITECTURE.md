@@ -6,6 +6,7 @@
 - **Relevant truth sources:**
   - `docs/2026-06-10-durak-prd.md`
   - `docs/STACK.md`
+  - `docs/2026-06-15-match-config-specs.md`
 - **Key constraints from PRD and stack:**
   - Go is the primary stack.
   - Game rules must not depend on CLI, TUI, SSH, storage, or AI packages.
@@ -25,6 +26,7 @@
 
 - **Domain core:** cards, deck, rule profile, match state, legal actions, state transitions, events, and outcome detection.
 - **Application/session layer:** coordinates matches and optional in-memory series, accepts player decisions, runs headless games, invokes player controllers, owns active in-memory state, and exposes snapshots to adapters.
+- **Match configuration model:** app-level value objects for per-match rules, seats, and series behavior. They validate built-in or future persisted config before mapping to domain rule profiles.
 - **CLI adapter:** parses terminal commands, renders text output, and calls the application layer.
 - **Text command adapter:** parses shared terminal-style player commands for CLI humans and raw-command AI testers.
 - **Bot adapter:** implements strategy interfaces using read-only decision contexts.
@@ -87,6 +89,7 @@
 - **Internal module structure:**
   - session service.
   - series/table orchestration for consecutive matches.
+  - match config value objects for seats, rule presets, and future live-loaded rule records.
   - headless series runner for bot-vs-bot, scripted, and future remote-controller games.
   - player controller ports that adapt bots, humans, scripts, or future external processes.
   - player/seat registry for the active match.
@@ -140,6 +143,7 @@
 - **Primary contracts/interfaces:**
   - `SessionService`: starts matches, accepts actions, advances bot turns, returns render snapshots.
   - `Series`: links optional consecutive matches at one table through stable seat order and completed match results.
+  - `MatchConfig`: app-level match creation config that validates rule, seat, and series options before a match starts.
   - `PlayerController`: receives a read-only turn context and returns a player decision such as a legal action or concession.
   - `ai.Client`: receives a provider-neutral turn prompt and returns a raw or structured AI response.
   - `SeriesRunner`: executes a series without CLI/TUI ownership and records a compact decision trace.
@@ -175,6 +179,7 @@
 
 - **Core entities and ownership:**
   - Domain core owns card, deck, rule, match, round, table, action, and event semantics.
+  - Application config owns external-facing rule choices and maps them into domain profiles; it does not execute rules.
   - Throw-in policy is represented by typed rule fields for player scope, timing, opening, close behavior, and contextual attack limits. The default preset is `all except defender`, `any eligible`, `lead first`, and `all eligible passed`, with no defender-hand attack cap.
   - Application/session layer owns active in-memory match sessions and in-memory series/table state.
   - Future persistence owns durable records, not live rule execution.
@@ -224,10 +229,12 @@
   - Local development.
   - Future hosted daemon environment.
 - **Config loading approach:**
-  - MVP uses built-in rule presets exposed by CLI flags, starting with `-rules default`.
+  - MVP uses built-in Go rule presets exposed by CLI flags, starting with `-rules default`.
+  - The first config contract is an in-process `MatchConfig`/`RuleConfig` value object, not a file format.
   - Bot/controller selection is also flag-driven in CLI and arena, starting with `simple` and `random`.
-  - Future per-match configuration maps into explicit rule-profile structs.
-  - File format is not chosen until external rule config is implemented.
+  - Future per-match configuration sources may be files, database records, or daemon control-plane requests.
+  - Runners receive immutable config values at match creation; live config updates affect new matches unless an explicit migration/admin flow says otherwise.
+  - File format is not chosen until external file config is intentionally implemented.
 - **Secret handling approach:**
   - No secrets in MVP.
   - Future daemon stores SSH host key path and AI provider credentials outside committed config.
@@ -258,7 +265,7 @@
   - `cmd/durak`: local CLI executable.
   - `cmd/durakd`: future SSH daemon executable.
   - `internal/domain`: framework-free game domain.
-  - `internal/app`: session/application services and ports.
+  - `internal/app`: session/application services, match config value objects, and ports.
   - `internal/adapters/cli`: CLI renderer and interactive loop runner.
   - `internal/adapters/textcmd`: shared terminal-style player command parsing.
   - `internal/adapters/bot`: bot strategy implementations.

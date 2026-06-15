@@ -160,6 +160,7 @@ restricted workspaces without writing to the user-level Go cache.
 ## Planning Docs
 
 - [PRD](docs/2026-06-10-durak-prd.md)
+- [Match Configuration Draft](docs/2026-06-15-match-config-specs.md)
 - [Stack](docs/STACK.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Project Rules](docs/PROJECT_RULES.md)
