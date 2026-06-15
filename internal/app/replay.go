@@ -48,8 +48,8 @@ func ReplayInternalEvents(events []InternalEvent, profile domain.RuleProfile) (R
 			}
 			replayedEvents = append(replayedEvents, match.DrainEvents()...)
 		case domain.EventKindAttack, domain.EventKindDefend, domain.EventKindThrowIn,
-			domain.EventKindTransfer, domain.EventKindTake, domain.EventKindFinishDefense,
-			domain.EventKindFinishTake:
+			domain.EventKindPassThrowIn, domain.EventKindTransfer, domain.EventKindTake,
+			domain.EventKindFinishDefense, domain.EventKindFinishTake:
 			if match == nil {
 				return ReplayResult{}, fmt.Errorf("%w: action before deal at sequence %d", ErrInvalidReplay, event.Sequence)
 			}

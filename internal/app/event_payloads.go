@@ -13,6 +13,7 @@ const (
 	eventNameAttack        = "attack"
 	eventNameDefend        = "defend"
 	eventNameThrowIn       = "throw_in"
+	eventNamePassThrowIn   = "pass_throw_in"
 	eventNameTransfer      = "transfer"
 	eventNameTake          = "take"
 	eventNameFinishDefense = "finish_defense"

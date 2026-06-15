@@ -29,6 +29,10 @@ var (
 	ErrAttackNotDefended = errors.New("attack not defended")
 	// ErrThrowInRankUnavailable means a throw-in card rank is absent from the table.
 	ErrThrowInRankUnavailable = errors.New("throw-in rank unavailable")
+	// ErrThrowInPassRequired means another seat may still add cards.
+	ErrThrowInPassRequired = errors.New("throw-in pass required")
+	// ErrThrowInAlreadyPassed means a seat already declined this throw-in window.
+	ErrThrowInAlreadyPassed = errors.New("throw-in already passed")
 	// ErrAttackLimitReached means the current round cannot accept another attack card.
 	ErrAttackLimitReached = errors.New("attack limit reached")
 	// ErrTransferDisabled means the rule profile does not allow transfers.
@@ -85,6 +89,10 @@ type Match struct {
 	defender           Seat
 	phase              MatchPhase
 	table              []TablePair
+	attackParticipants []Seat
+	throwInPasses      []bool
+	throwInLeadPending bool
+	roundAttackLimit   int
 	successfulDefenses int
 	roundsStarted      int
 	winner             Seat
@@ -100,17 +108,19 @@ func NewMatch(deal *InitialDeal, profile RuleProfile) (*Match, error) {
 
 	attacker := Seat(deal.FirstAttacker)
 	match := &Match{
-		profile:        profile,
-		hands:          cloneHands(deal.Hands),
-		activeSeats:    newActiveSeats(len(deal.Hands)),
-		stock:          slices.Clone(deal.Stock),
-		trumpSuit:      deal.TrumpSuit,
-		trumpIndicator: deal.TrumpIndicator,
-		attacker:       attacker,
-		defender:       nextSeat(attacker, len(deal.Hands)),
-		phase:          MatchPhaseAttack,
-		winner:         NoSeat,
-		loser:          NoSeat,
+		profile:          profile,
+		hands:            cloneHands(deal.Hands),
+		activeSeats:      newActiveSeats(len(deal.Hands)),
+		stock:            slices.Clone(deal.Stock),
+		trumpSuit:        deal.TrumpSuit,
+		trumpIndicator:   deal.TrumpIndicator,
+		attacker:         attacker,
+		defender:         nextSeat(attacker, len(deal.Hands)),
+		throwInPasses:    make([]bool, len(deal.Hands)),
+		roundAttackLimit: 0,
+		phase:            MatchPhaseAttack,
+		winner:           NoSeat,
+		loser:            NoSeat,
 	}
 	match.appendMatchStartedEvent(profile)
 	match.appendDealEvent(deal)
@@ -299,6 +309,21 @@ func (m *Match) setNextRolesFrom(start Seat) {
 
 func (m *Match) setNextRolesAfter(seat Seat) {
 	m.setNextRolesFrom(nextSeat(seat, len(m.hands)))
+}
+
+func (m *Match) previousActiveSeatBefore(seat Seat) (Seat, bool) {
+	if len(m.hands) < 2 {
+		return NoSeat, false
+	}
+	playerCount := len(m.hands)
+	startIndex := ((int(seat) % playerCount) + playerCount) % playerCount
+	for offset := 1; offset < playerCount; offset++ {
+		candidate := Seat((startIndex - offset + playerCount) % playerCount)
+		if m.activeSeat(candidate) {
+			return candidate, true
+		}
+	}
+	return NoSeat, false
 }
 
 func (m *Match) firstEmptySeat() Seat {

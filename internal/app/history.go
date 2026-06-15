@@ -103,8 +103,8 @@ func applySummaryEvent(summary *MatchSummary, event *Event) error {
 		}
 		return applySummaryDeal(summary, event.Domain.Deal)
 	case domain.EventKindAttack, domain.EventKindDefend, domain.EventKindThrowIn,
-		domain.EventKindTransfer, domain.EventKindTake, domain.EventKindFinishDefense,
-		domain.EventKindFinishTake:
+		domain.EventKindPassThrowIn, domain.EventKindTransfer, domain.EventKindTake,
+		domain.EventKindFinishDefense, domain.EventKindFinishTake:
 		if event.Domain.Action == nil {
 			return missingHistoryPayload(event.Domain.Kind)
 		}

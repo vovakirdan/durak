@@ -11,8 +11,9 @@ plain text and intentionally small; it is a stepping stone before a richer TUI.
 Implemented core pieces:
 
 - 36-card deck, initial deal, trump selection, and first-attacker selection.
-- Match state machine for 2..6 seats with attack, defense, throw-in, transfer,
-  take, refill, active-seat skipping, and match completion.
+- Match state machine for 2..6 seats with attack, defense, configurable
+  throw-in windows, transfer, take, refill, active-seat skipping, and match
+  completion.
 - Application session layer, event replay/history projection foundation, and a
   simple controller registry for deterministic and random bots.
 - Two-seat interactive CLI commands by action number or short commands, with
@@ -24,6 +25,7 @@ CLI commands:
 - `a <card>` attacks with a card.
 - `d [attack#] <card>` defends an attack.
 - `throw <card>` throws in a legal card.
+- `pass` declines the current optional throw-in window.
 - `tr <card>` transfers an attack with a same-rank card.
 - `take` takes cards.
 - `done` finishes a defense or pickup.
@@ -137,8 +139,8 @@ useful for long-running AI-vs-AI sessions that will be analyzed after the run.
 
 External raw AI processes receive a JSON object containing visible state,
 private hand, legal command hints, and previous parse errors. They should print
-exactly one command such as `1`, `attack 6C`, `defend 1 7C`, `take`, `done`, or
-`concede`.
+exactly one command such as `1`, `attack 6C`, `defend 1 7C`, `throw 6D`,
+`pass`, `take`, `done`, or `concede`.
 
 The Makefile keeps Go build caches under `.cache/` so commands work in
 restricted workspaces without writing to the user-level Go cache.

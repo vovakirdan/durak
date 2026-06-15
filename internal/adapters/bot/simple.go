@@ -59,14 +59,16 @@ func actionPriority(kind domain.ActionKind) int {
 		return 2
 	case domain.ActionKindThrowIn:
 		return 3
-	case domain.ActionKindFinishDefense:
+	case domain.ActionKindPassThrowIn:
 		return 4
-	case domain.ActionKindFinishTake:
+	case domain.ActionKindFinishDefense:
 		return 5
-	case domain.ActionKindTake:
+	case domain.ActionKindFinishTake:
 		return 6
-	default:
+	case domain.ActionKindTake:
 		return 7
+	default:
+		return 8
 	}
 }
 

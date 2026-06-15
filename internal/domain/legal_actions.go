@@ -73,11 +73,11 @@ func (m *Match) legalDefenseActions(seat Seat) []Action {
 }
 
 func (m *Match) legalThrowInActions(seat Seat, includeFinishDefense bool) []Action {
-	if seat != m.attacker {
+	if !m.throwInCandidateSeat(seat) {
 		return nil
 	}
 
-	actions := make([]Action, 0, len(m.hands[int(seat)])+1)
+	actions := make([]Action, 0, len(m.hands[int(seat)])+2)
 	for _, card := range m.hands[int(seat)] {
 		if m.validateThrowIn(seat, card) != nil {
 			continue
@@ -88,10 +88,15 @@ func (m *Match) legalThrowInActions(seat Seat, includeFinishDefense bool) []Acti
 			Card: card,
 		})
 	}
-	if includeFinishDefense {
-		actions = append(actions, Action{Kind: ActionKindFinishDefense, Seat: seat})
-	} else {
-		actions = append(actions, Action{Kind: ActionKindFinishTake, Seat: seat})
+	if m.validatePassThrowIn(seat) == nil {
+		actions = append(actions, Action{Kind: ActionKindPassThrowIn, Seat: seat})
+	}
+	if seat == m.attacker && m.canFinishThrowInWindow(seat) {
+		if includeFinishDefense {
+			actions = append(actions, Action{Kind: ActionKindFinishDefense, Seat: seat})
+		} else {
+			actions = append(actions, Action{Kind: ActionKindFinishTake, Seat: seat})
+		}
 	}
 	return actions
 }

@@ -133,8 +133,8 @@ func encodeDomainEvent(event *domain.Event) (kind string, payload any, err error
 		payload, err := encodeDeal(event.Deal)
 		return eventNameDeal, payload, err
 	case domain.EventKindAttack, domain.EventKindDefend, domain.EventKindThrowIn,
-		domain.EventKindTransfer, domain.EventKindTake, domain.EventKindFinishDefense,
-		domain.EventKindFinishTake:
+		domain.EventKindPassThrowIn, domain.EventKindTransfer, domain.EventKindTake,
+		domain.EventKindFinishDefense, domain.EventKindFinishTake:
 		if event.Action == nil {
 			return "", nil, missingPayload(event.Kind)
 		}
@@ -185,8 +185,8 @@ func decodeDomainEvent(kind string, payload json.RawMessage) (domain.Event, erro
 	case eventNameDeal:
 		event, err := decodeDeal(payload)
 		return domain.Event{Kind: domain.EventKindDeal, Deal: &event}, err
-	case eventNameAttack, eventNameDefend, eventNameThrowIn, eventNameTransfer,
-		eventNameTake, eventNameFinishDefense, eventNameFinishTake:
+	case eventNameAttack, eventNameDefend, eventNameThrowIn, eventNamePassThrowIn,
+		eventNameTransfer, eventNameTake, eventNameFinishDefense, eventNameFinishTake:
 		action, err := decodeActionEvent(payload)
 		if err != nil {
 			return domain.Event{}, err

@@ -34,6 +34,7 @@ func TestMarshalEventJSONRoundTripsAllEventKinds(t *testing.T) {
 		testActionEvent(domain.EventKindAttack, domain.ActionKindAttack, domain.Seat(0), domain.Card{Rank: domain.Six, Suit: domain.Clubs}, 0),
 		testActionEvent(domain.EventKindDefend, domain.ActionKindDefend, domain.Seat(1), domain.Card{Rank: domain.Seven, Suit: domain.Clubs}, 1),
 		testActionEvent(domain.EventKindThrowIn, domain.ActionKindThrowIn, domain.Seat(0), domain.Card{Rank: domain.Six, Suit: domain.Diamonds}, 0),
+		testActionEvent(domain.EventKindPassThrowIn, domain.ActionKindPassThrowIn, domain.Seat(2), domain.Card{}, 0),
 		testActionEvent(domain.EventKindTransfer, domain.ActionKindTransfer, domain.Seat(1), domain.Card{Rank: domain.Six, Suit: domain.Spades}, 0),
 		testActionEvent(domain.EventKindTake, domain.ActionKindTake, domain.Seat(1), domain.Card{}, 0),
 		testActionEvent(domain.EventKindFinishDefense, domain.ActionKindFinishDefense, domain.Seat(0), domain.Card{}, 0),

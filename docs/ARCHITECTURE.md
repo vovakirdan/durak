@@ -73,6 +73,7 @@
   - cards and deck types.
   - rule profile and built-in presets.
   - match state and round state.
+  - throw-in window state: eligible seats, lead-first opening, pass tracking, attack participants, and attack-card limits.
   - action types and validation.
   - event types and visibility metadata.
   - deterministic shuffle/deal helpers using injected randomness.
@@ -166,17 +167,20 @@
   - Domain core imports no adapter packages.
   - Adapters may depend inward on application/domain packages.
   - Bot and human actions share the same validation path.
+  - Optional throw-ins are modeled as a free-form domain window, not as UI turn order. Any eligible seat may submit a legal throw-in; adapters such as arena may poll seats deterministically, while future daemon/TUI sessions can accept concurrent player commands and serialize accepted actions per match.
   - Future SSH concurrency must serialize mutations per match.
 
 ## 7. Data and State Architecture
 
 - **Core entities and ownership:**
   - Domain core owns card, deck, rule, match, round, table, action, and event semantics.
+  - Throw-in policy is represented by typed rule fields for player scope, timing, opening, close behavior, and contextual attack limits. The default preset is `all except defender`, `any eligible`, `lead first`, and `all eligible passed`, with no defender-hand attack cap.
   - Application/session layer owns active in-memory match sessions and in-memory series/table state.
   - Future persistence owns durable records, not live rule execution.
 - **Event stream roles:**
   - Public events are safe for visible history, public replay, and local JSONL export.
   - Internal events are the canonical per-match stream for exact replay/resume. The initial internal deal records hidden hands and stock order; later accepted actions can be replayed from that state.
+  - `pass_throw_in` is a first-class action event because declining an optional throw-in affects whether a round can close and must be replayable.
   - Future internal events may include additional hidden state such as explicit draw cards, seeds, or decision context when needed for faster reconstruction or model training.
   - Snapshots are derived checkpoints for faster resume/replay; they are not the source of truth.
   - Projections/read models are derived tables for statistics, scoring, ratings, and global analytics; they must be rebuildable from event streams.

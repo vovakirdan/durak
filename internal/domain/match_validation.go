@@ -25,8 +25,8 @@ func (m *Match) validateThrowIn(seat Seat, card Card) error {
 	if m.phase != MatchPhaseThrowIn && m.phase != MatchPhaseTaking {
 		return fmt.Errorf("%w: throw-in requires throw-in or taking phase", ErrInvalidPhase)
 	}
-	if seat != m.attacker {
-		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
+	if !m.seatMayActInThrowInWindow(seat) {
+		return fmt.Errorf("%w: throw-in is not available for seat %d", ErrNotPlayersTurn, seat)
 	}
 	if !m.hasCard(seat, card) {
 		return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
@@ -34,8 +34,27 @@ func (m *Match) validateThrowIn(seat Seat, card Card) error {
 	if !m.rankOnTable(card.Rank) {
 		return fmt.Errorf("%w: %s", ErrThrowInRankUnavailable, card)
 	}
-	if m.phase != MatchPhaseTaking && !m.canAddSuccessfulDefenseAttack() {
-		return fmt.Errorf("%w: first successful defense attack limit is %d", ErrAttackLimitReached, m.firstSuccessfulDefenseLimit())
+	if err := m.validateCanAddAttackCard(m.defender); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (m *Match) validatePassThrowIn(seat Seat) error {
+	if err := m.requireInProgress(); err != nil {
+		return err
+	}
+	if m.phase != MatchPhaseThrowIn && m.phase != MatchPhaseTaking {
+		return fmt.Errorf("%w: pass requires throw-in or taking phase", ErrInvalidPhase)
+	}
+	if !m.seatMayActInThrowInWindow(seat) {
+		return fmt.Errorf("%w: throw-in pass is not available for seat %d", ErrNotPlayersTurn, seat)
+	}
+	if !m.seatHasThrowableCard(seat) {
+		return fmt.Errorf("%w: no throw-in card is available for seat %d", ErrThrowInRankUnavailable, seat)
+	}
+	if m.throwInPasses[int(seat)] {
+		return fmt.Errorf("%w: seat %d", ErrThrowInAlreadyPassed, seat)
 	}
 	return nil
 }
@@ -65,11 +84,12 @@ func (m *Match) validateTransfer(seat Seat, card Card) error {
 	if !m.rankOnTable(card.Rank) {
 		return fmt.Errorf("%w: %s", ErrTransferRankUnavailable, card)
 	}
-	if !m.canAddSuccessfulDefenseAttack() {
-		return fmt.Errorf("%w: first successful defense attack limit is %d", ErrAttackLimitReached, m.firstSuccessfulDefenseLimit())
-	}
-	if _, ok := m.nextActiveSeatAfter(seat); !ok {
+	nextDefender, ok := m.nextActiveSeatAfter(seat)
+	if !ok {
 		return fmt.Errorf("%w: no next active defender", ErrTransferNotAllowed)
+	}
+	if err := m.validateCanAddAttackCard(nextDefender); err != nil {
+		return err
 	}
 	return nil
 }
@@ -90,16 +110,4 @@ func (m *Match) rankOnTable(rank Rank) bool {
 		}
 	}
 	return false
-}
-
-func (m *Match) canAddSuccessfulDefenseAttack() bool {
-	limit := m.firstSuccessfulDefenseLimit()
-	return limit == 0 || len(m.table) < limit
-}
-
-func (m *Match) firstSuccessfulDefenseLimit() int {
-	if m.successfulDefenses > 0 || m.profile.FirstSuccessfulDefenseAttackLimit <= 0 {
-		return 0
-	}
-	return m.profile.FirstSuccessfulDefenseAttackLimit
 }

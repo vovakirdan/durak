@@ -252,6 +252,8 @@ func actionKindName(kind domain.ActionKind) string {
 		return "defend"
 	case domain.ActionKindThrowIn:
 		return "throw_in"
+	case domain.ActionKindPassThrowIn:
+		return "pass_throw_in"
 	case domain.ActionKindTake:
 		return "take"
 	case domain.ActionKindFinishDefense:

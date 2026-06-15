@@ -21,7 +21,7 @@ func newRenderer(humanSeat, botSeat domain.Seat) renderer {
 }
 
 func (renderer) writeHelp(out *output) {
-	out.println("Commands: number | a <card> | d [attack#] <card> | throw <card> | tr <card> | take | done | concede | help | quit")
+	out.println("Commands: number | a <card> | d [attack#] <card> | throw <card> | pass | tr <card> | take | done | concede | help | quit")
 	out.println("Cards can be hand indexes or codes like 6C, 10D, AH.")
 	out.println("After a result, press Enter or type next to start another match.")
 }
@@ -144,6 +144,8 @@ func formatAction(action domain.Action) string {
 		return fmt.Sprintf("defend %d with %s", action.AttackIndex+1, action.Card)
 	case domain.ActionKindThrowIn:
 		return fmt.Sprintf("throw %s", action.Card)
+	case domain.ActionKindPassThrowIn:
+		return "pass"
 	case domain.ActionKindTransfer:
 		return fmt.Sprintf("transfer %s", action.Card)
 	case domain.ActionKindTake:

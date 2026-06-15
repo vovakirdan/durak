@@ -39,6 +39,8 @@ func FormatActionCommand(action domain.Action) string {
 		return fmt.Sprintf("defend %d %s", action.AttackIndex+1, action.Card)
 	case domain.ActionKindThrowIn:
 		return "throw " + action.Card.String()
+	case domain.ActionKindPassThrowIn:
+		return "pass"
 	case domain.ActionKindTake:
 		return "take"
 	case domain.ActionKindFinishDefense, domain.ActionKindFinishTake:
@@ -84,7 +86,9 @@ func Parse(input string, decision *app.DecisionContext) (Command, error) {
 		return parseDefendAction(fields[1:], decision)
 	case "t", "take":
 		return parseKindAction(domain.ActionKindTake, decision)
-	case "f", "finish", "done", "pass":
+	case "pass":
+		return parsePassAction(decision)
+	case "f", "finish", "done":
 		return parseFinishAction(decision)
 	default:
 		return Command{}, commandError("unknown command")
@@ -181,6 +185,13 @@ func parseFinishAction(decision *app.DecisionContext) (Command, error) {
 		return command, nil
 	}
 	return parseKindAction(domain.ActionKindFinishTake, decision)
+}
+
+func parsePassAction(decision *app.DecisionContext) (Command, error) {
+	if command, err := parseKindAction(domain.ActionKindPassThrowIn, decision); err == nil {
+		return command, nil
+	}
+	return parseFinishAction(decision)
 }
 
 func findLegalAction(actions []domain.Action, match func(domain.Action) bool) (Command, error) {

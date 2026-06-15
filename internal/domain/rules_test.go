@@ -27,8 +27,20 @@ func TestDefaultRuleProfile(t *testing.T) {
 	if profile.FirstAttackTransferAllowed {
 		t.Fatal("FirstAttackTransferAllowed = true, want false")
 	}
-	if !profile.ThrowInsFromAllPlayers {
-		t.Fatal("ThrowInsFromAllPlayers = false, want true")
+	if profile.ThrowInPlayerScope != ThrowInPlayerScopeAllExceptDefender {
+		t.Fatalf("ThrowInPlayerScope = %v, want %v", profile.ThrowInPlayerScope, ThrowInPlayerScopeAllExceptDefender)
+	}
+	if profile.ThrowInTiming != ThrowInTimingAnyEligible {
+		t.Fatalf("ThrowInTiming = %v, want %v", profile.ThrowInTiming, ThrowInTimingAnyEligible)
+	}
+	if profile.ThrowInOpening != ThrowInOpeningLeadFirst {
+		t.Fatalf("ThrowInOpening = %v, want %v", profile.ThrowInOpening, ThrowInOpeningLeadFirst)
+	}
+	if profile.ThrowInClose != ThrowInCloseAllEligiblePassed {
+		t.Fatalf("ThrowInClose = %v, want %v", profile.ThrowInClose, ThrowInCloseAllEligiblePassed)
+	}
+	if profile.AttackLimitPolicy != AttackLimitUnlimited {
+		t.Fatalf("AttackLimitPolicy = %v, want %v", profile.AttackLimitPolicy, AttackLimitUnlimited)
 	}
 	if profile.FirstSuccessfulDefenseAttackLimit != 5 {
 		t.Fatalf("FirstSuccessfulDefenseAttackLimit = %d, want 5", profile.FirstSuccessfulDefenseAttackLimit)

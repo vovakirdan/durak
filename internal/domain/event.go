@@ -16,6 +16,8 @@ const (
 	EventKindDefend
 	// EventKindThrowIn records an accepted throw-in action.
 	EventKindThrowIn
+	// EventKindPassThrowIn records a seat declining optional throw-ins.
+	EventKindPassThrowIn
 	// EventKindTransfer records an accepted transfer action.
 	EventKindTransfer
 	// EventKindTake records a defender choosing to take cards.

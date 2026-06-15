@@ -18,6 +18,8 @@ func eventNameForDomainKind(kind domain.EventKind) (string, bool) {
 		return eventNameDefend, true
 	case domain.EventKindThrowIn:
 		return eventNameThrowIn, true
+	case domain.EventKindPassThrowIn:
+		return eventNamePassThrowIn, true
 	case domain.EventKindTransfer:
 		return eventNameTransfer, true
 	case domain.EventKindTake:
@@ -51,6 +53,8 @@ func domainKindForEventName(name string) (domain.EventKind, bool) {
 		return domain.EventKindDefend, true
 	case eventNameThrowIn:
 		return domain.EventKindThrowIn, true
+	case eventNamePassThrowIn:
+		return domain.EventKindPassThrowIn, true
 	case eventNameTransfer:
 		return domain.EventKindTransfer, true
 	case eventNameTake:
@@ -80,6 +84,8 @@ func encodeActionKind(kind domain.ActionKind) (string, error) {
 		return eventNameDefend, nil
 	case domain.ActionKindThrowIn:
 		return eventNameThrowIn, nil
+	case domain.ActionKindPassThrowIn:
+		return eventNamePassThrowIn, nil
 	case domain.ActionKindTake:
 		return eventNameTake, nil
 	case domain.ActionKindFinishDefense:
@@ -101,6 +107,8 @@ func decodeActionKind(name string) (domain.ActionKind, error) {
 		return domain.ActionKindDefend, nil
 	case eventNameThrowIn:
 		return domain.ActionKindThrowIn, nil
+	case eventNamePassThrowIn:
+		return domain.ActionKindPassThrowIn, nil
 	case eventNameTake:
 		return domain.ActionKindTake, nil
 	case eventNameFinishDefense:

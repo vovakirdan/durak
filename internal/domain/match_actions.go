@@ -17,6 +17,7 @@ func (m *Match) Attack(seat Seat, card Card) error {
 		return err
 	}
 	m.roundsStarted++
+	m.startAttackRound(seat)
 	m.phase = MatchPhaseDefense
 	m.appendActionEvent(EventKindAttack, Action{Kind: ActionKindAttack, Seat: seat, Card: card})
 	return nil
@@ -52,6 +53,7 @@ func (m *Match) Defend(seat Seat, attackIndex int, defense Card) error {
 	pair.Defended = true
 	if m.allAttacksDefended() {
 		m.phase = MatchPhaseThrowIn
+		m.openThrowInWindow()
 	}
 	m.appendActionEvent(EventKindDefend, Action{
 		Kind:        ActionKindDefend,
@@ -71,10 +73,29 @@ func (m *Match) ThrowIn(seat Seat, card Card) error {
 	if err := m.addAttackCard(seat, card); err != nil {
 		return err
 	}
+	m.addAttackParticipant(seat)
+	if m.profile.ThrowInOpening == ThrowInOpeningLeadFirst && seat == m.attacker {
+		m.throwInLeadPending = false
+	}
+	m.resetThrowInPasses()
 	if m.phase == MatchPhaseThrowIn {
 		m.phase = MatchPhaseDefense
 	}
 	m.appendActionEvent(EventKindThrowIn, Action{Kind: ActionKindThrowIn, Seat: seat, Card: card})
+	return nil
+}
+
+// PassThrowIn declines adding cards in the current optional throw-in window.
+func (m *Match) PassThrowIn(seat Seat) error {
+	if err := m.validatePassThrowIn(seat); err != nil {
+		return err
+	}
+
+	m.throwInPasses[int(seat)] = true
+	if m.profile.ThrowInOpening == ThrowInOpeningLeadFirst && seat == m.attacker {
+		m.throwInLeadPending = false
+	}
+	m.appendActionEvent(EventKindPassThrowIn, Action{Kind: ActionKindPassThrowIn, Seat: seat})
 	return nil
 }
 
@@ -84,12 +105,17 @@ func (m *Match) Transfer(seat Seat, card Card) error {
 		return err
 	}
 
+	nextDefender, _ := m.nextActiveSeatAfter(seat)
 	if err := m.addAttackCard(seat, card); err != nil {
 		return err
 	}
-	if nextDefender, ok := m.nextActiveSeatAfter(seat); ok {
+	m.addAttackParticipant(seat)
+	m.resetThrowInPasses()
+	if nextDefender != NoSeat {
 		m.attacker = seat
 		m.defender = nextDefender
+		m.roundAttackLimit = m.attackLimitForDefender(nextDefender)
+		m.throwInLeadPending = m.profile.ThrowInOpening == ThrowInOpeningLeadFirst
 	}
 	m.appendActionEvent(EventKindTransfer, Action{Kind: ActionKindTransfer, Seat: seat, Card: card})
 	return nil
@@ -109,6 +135,9 @@ func (m *Match) FinishDefense(seat Seat) error {
 	if !m.allAttacksDefended() {
 		return ErrAttackNotDefended
 	}
+	if !m.canFinishThrowInWindow(seat) {
+		return fmt.Errorf("%w: other seats can still throw in", ErrThrowInPassRequired)
+	}
 
 	cards := tableCards(m.table)
 	m.appendActionEvent(EventKindFinishDefense, Action{Kind: ActionKindFinishDefense, Seat: seat})
@@ -118,7 +147,8 @@ func (m *Match) FinishDefense(seat Seat) error {
 
 	oldAttacker := m.attacker
 	oldDefender := m.defender
-	m.refill(oldAttacker, oldDefender)
+	m.refill(m.attackRefillOrder(oldDefender)...)
+	m.closeAttackRound()
 	completed := m.completeIfFinished()
 	if !completed {
 		m.setNextRolesFrom(oldDefender)
@@ -144,6 +174,7 @@ func (m *Match) Take(seat Seat) error {
 	}
 
 	m.phase = MatchPhaseTaking
+	m.openThrowInWindow()
 	m.appendActionEvent(EventKindTake, Action{Kind: ActionKindTake, Seat: seat})
 	return nil
 }
@@ -159,6 +190,9 @@ func (m *Match) FinishTake(seat Seat) error {
 	if seat != m.attacker {
 		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
 	}
+	if !m.canFinishThrowInWindow(seat) {
+		return fmt.Errorf("%w: other seats can still throw in", ErrThrowInPassRequired)
+	}
 
 	cards := tableCards(m.table)
 	m.appendActionEvent(EventKindFinishTake, Action{Kind: ActionKindFinishTake, Seat: seat})
@@ -167,7 +201,8 @@ func (m *Match) FinishTake(seat Seat) error {
 
 	oldAttacker := m.attacker
 	oldDefender := m.defender
-	m.refill(oldAttacker, oldDefender)
+	m.refill(m.attackRefillOrder(oldDefender)...)
+	m.closeAttackRound()
 	completed := m.completeIfFinished()
 	if !completed {
 		m.setNextRolesAfter(oldDefender)

@@ -90,6 +90,69 @@ func TestSeriesRunnerPlaysThreeSeatMatch(t *testing.T) {
 	}
 }
 
+func TestSeriesRunnerPollsEligibleThrowInSeat(t *testing.T) {
+	hands := [][]domain.Card{
+		{
+			{Rank: domain.Six, Suit: domain.Hearts},
+			{Rank: domain.Ten, Suit: domain.Clubs},
+			{Rank: domain.Jack, Suit: domain.Clubs},
+			{Rank: domain.Queen, Suit: domain.Diamonds},
+			{Rank: domain.King, Suit: domain.Diamonds},
+			{Rank: domain.Ace, Suit: domain.Diamonds},
+		},
+		{
+			{Rank: domain.Seven, Suit: domain.Hearts},
+			{Rank: domain.Eight, Suit: domain.Diamonds},
+			{Rank: domain.Ten, Suit: domain.Spades},
+			{Rank: domain.Jack, Suit: domain.Spades},
+			{Rank: domain.Queen, Suit: domain.Spades},
+			{Rank: domain.King, Suit: domain.Spades},
+		},
+		{
+			{Rank: domain.Six, Suit: domain.Diamonds},
+			{Rank: domain.Ten, Suit: domain.Hearts},
+			{Rank: domain.Jack, Suit: domain.Hearts},
+			{Rank: domain.Queen, Suit: domain.Hearts},
+			{Rank: domain.King, Suit: domain.Hearts},
+			{Rank: domain.Ace, Suit: domain.Spades},
+		},
+	}
+	seat2Threw := false
+	controller := controllerFunc(func(_ context.Context, turn *app.TurnContext) (app.PlayerDecision, error) {
+		if seat2Threw {
+			return app.ConcedeDecision(), nil
+		}
+		for _, action := range turn.LegalActions {
+			if action.Kind == domain.ActionKindThrowIn && action.Seat == domain.Seat(2) {
+				seat2Threw = true
+				return app.ActionDecision(action), nil
+			}
+		}
+		return app.ActionDecision(turn.LegalActions[0]), nil
+	})
+	runner := mustRunner(t, app.SeriesRunnerOptions{
+		Series: mustRunnerSeriesWithSeats(t, []domain.Seat{0, 1, 2}),
+		Controllers: map[domain.Seat]app.PlayerController{
+			domain.Seat(0): controller,
+			domain.Seat(1): controller,
+			domain.Seat(2): controller,
+		},
+		Deal: fixedDeck(deckForDeal(hands, stockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, hands...))),
+	})
+
+	result, err := runner.Run(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	for _, turn := range result.Turns {
+		if turn.Seat == domain.Seat(2) && turn.Decision.Action.Kind == domain.ActionKindThrowIn {
+			return
+		}
+	}
+	t.Fatalf("turns = %+v, want seat2 throw-in turn", result.Turns)
+}
+
 func TestSeriesRunnerStopsAtActionLimit(t *testing.T) {
 	hands := runnerHands()
 	runner := mustRunner(t, app.SeriesRunnerOptions{

@@ -12,6 +12,8 @@ const (
 	ActionKindDefend
 	// ActionKindThrowIn adds a legal attack card after ranks appear on the table.
 	ActionKindThrowIn
+	// ActionKindPassThrowIn declines the current optional throw-in window.
+	ActionKindPassThrowIn
 	// ActionKindTake declares that the defender will take table cards.
 	ActionKindTake
 	// ActionKindFinishDefense completes a successful defense.
@@ -39,6 +41,8 @@ func (m *Match) ApplyAction(action Action) error {
 		return m.Defend(action.Seat, action.AttackIndex, action.Card)
 	case ActionKindThrowIn:
 		return m.ThrowIn(action.Seat, action.Card)
+	case ActionKindPassThrowIn:
+		return m.PassThrowIn(action.Seat)
 	case ActionKindTake:
 		return m.Take(action.Seat)
 	case ActionKindFinishDefense:

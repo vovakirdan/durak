@@ -418,6 +418,155 @@ func TestThreePlayerTakeAdvancesAfterOldDefender(t *testing.T) {
 	}
 }
 
+func TestThreePlayerLeadOpensThrowInWindow(t *testing.T) {
+	attack := Card{Rank: Six, Suit: Clubs}
+	leadThrowIn := Card{Rank: Six, Suit: Spades}
+	otherThrowIn := Card{Rank: Six, Suit: Diamonds}
+	defense := Card{Rank: Seven, Suit: Clubs}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			{attack, leadThrowIn},
+			{defense},
+			{otherThrowIn},
+		},
+		nil,
+		0,
+	))
+	mustRoundDefended(t, match, attack, defense)
+
+	err := match.ThrowIn(Seat(2), otherThrowIn)
+	if !errors.Is(err, ErrNotPlayersTurn) {
+		t.Fatalf("ThrowIn before lead pass error = %v, want ErrNotPlayersTurn", err)
+	}
+	if err := match.PassThrowIn(Seat(0)); err != nil {
+		t.Fatalf("PassThrowIn returned error: %v", err)
+	}
+	if err := match.ThrowIn(Seat(2), otherThrowIn); err != nil {
+		t.Fatalf("ThrowIn after lead pass returned error: %v", err)
+	}
+}
+
+func TestThreePlayerFinishDefenseRequiresOtherThrowInPass(t *testing.T) {
+	attack := Card{Rank: Six, Suit: Clubs}
+	otherThrowIn := Card{Rank: Six, Suit: Diamonds}
+	defense := Card{Rank: Seven, Suit: Clubs}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			{attack},
+			{defense},
+			{otherThrowIn},
+		},
+		nil,
+		0,
+	))
+	mustRoundDefended(t, match, attack, defense)
+
+	err := match.FinishDefense(Seat(0))
+	if !errors.Is(err, ErrThrowInPassRequired) {
+		t.Fatalf("FinishDefense error = %v, want ErrThrowInPassRequired", err)
+	}
+	if err := match.PassThrowIn(Seat(2)); err != nil {
+		t.Fatalf("PassThrowIn returned error: %v", err)
+	}
+	if err := match.FinishDefense(Seat(0)); err != nil {
+		t.Fatalf("FinishDefense after pass returned error: %v", err)
+	}
+}
+
+func TestThreePlayerRefillIncludesAllAttackParticipants(t *testing.T) {
+	attack := Card{Rank: Six, Suit: Clubs}
+	throwIn := Card{Rank: Six, Suit: Diamonds}
+	firstDefense := Card{Rank: Seven, Suit: Clubs}
+	secondDefense := Card{Rank: Eight, Suit: Diamonds}
+	attackerFillers := []Card{
+		{Rank: Ten, Suit: Clubs},
+		{Rank: Jack, Suit: Clubs},
+		{Rank: Queen, Suit: Diamonds},
+		{Rank: King, Suit: Diamonds},
+		{Rank: Ace, Suit: Diamonds},
+	}
+	defenderFillers := []Card{
+		{Rank: Ten, Suit: Spades},
+		{Rank: Jack, Suit: Spades},
+		{Rank: Queen, Suit: Spades},
+		{Rank: King, Suit: Spades},
+	}
+	throwerFillers := []Card{
+		{Rank: Ten, Suit: Hearts},
+		{Rank: Jack, Suit: Hearts},
+		{Rank: Queen, Suit: Hearts},
+		{Rank: King, Suit: Hearts},
+		{Rank: Ace, Suit: Spades},
+	}
+	draws := []Card{
+		{Rank: Ace, Suit: Clubs},
+		{Rank: King, Suit: Clubs},
+		{Rank: Queen, Suit: Clubs},
+		{Rank: Jack, Suit: Diamonds},
+	}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			slices.Concat([]Card{attack}, attackerFillers),
+			slices.Concat([]Card{firstDefense, secondDefense}, defenderFillers),
+			slices.Concat([]Card{throwIn}, throwerFillers),
+		},
+		draws,
+		0,
+	))
+	mustRoundDefended(t, match, attack, firstDefense)
+	if err := match.ThrowIn(Seat(2), throwIn); err != nil {
+		t.Fatalf("ThrowIn returned error: %v", err)
+	}
+	if err := match.Defend(Seat(1), 1, secondDefense); err != nil {
+		t.Fatalf("Defend second attack returned error: %v", err)
+	}
+	if err := match.FinishDefense(Seat(0)); err != nil {
+		t.Fatalf("FinishDefense returned error: %v", err)
+	}
+
+	if got := match.Hand(Seat(0)); !slices.Equal(got, slices.Concat(attackerFillers, []Card{draws[0]})) {
+		t.Fatalf("seat0 hand = %v, want first draw", got)
+	}
+	if got := match.Hand(Seat(2)); !slices.Equal(got, slices.Concat(throwerFillers, []Card{draws[1]})) {
+		t.Fatalf("seat2 hand = %v, want second draw", got)
+	}
+	if got := match.Hand(Seat(1)); !slices.Equal(got, slices.Concat(defenderFillers, draws[2:])) {
+		t.Fatalf("seat1 hand = %v, want defender draws last", got)
+	}
+}
+
+func TestAttackLimitCanUseDefenderInitialHandSize(t *testing.T) {
+	profile := DefaultRuleProfile()
+	profile.AttackLimitPolicy = AttackLimitByDefenderInitialHand
+	attacks := []Card{
+		{Rank: Six, Suit: Clubs},
+		{Rank: Six, Suit: Diamonds},
+		{Rank: Six, Suit: Spades},
+	}
+	match := mustNewMatchWithProfile(t, matchDeal(
+		[][]Card{
+			attacks,
+			{{Rank: King, Suit: Clubs}, {Rank: Queen, Suit: Clubs}},
+		},
+		nil,
+		0,
+	), profile)
+
+	if err := match.Attack(Seat(0), attacks[0]); err != nil {
+		t.Fatalf("Attack returned error: %v", err)
+	}
+	if err := match.Take(Seat(1)); err != nil {
+		t.Fatalf("Take returned error: %v", err)
+	}
+	if err := match.ThrowIn(Seat(0), attacks[1]); err != nil {
+		t.Fatalf("second attack returned error: %v", err)
+	}
+	err := match.ThrowIn(Seat(0), attacks[2])
+	if !errors.Is(err, ErrAttackLimitReached) {
+		t.Fatalf("third attack error = %v, want ErrAttackLimitReached", err)
+	}
+}
+
 func TestThreePlayerRolesSkipEmptySeatWhenStockIsEmpty(t *testing.T) {
 	attack := Card{Rank: Six, Suit: Clubs}
 	defense := Card{Rank: Seven, Suit: Clubs}

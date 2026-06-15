@@ -153,7 +153,7 @@ func (r *SeriesRunner) runMatch(
 			return turns, fmt.Errorf("%w: match %q after %d actions", ErrActionLimitExceeded, matchID, r.maxActionsPerMatch)
 		}
 
-		seat := activeRunnerSeat(&view)
+		seat := activeRunnerSeat(session, &view)
 		controller := r.controllers[seat]
 		if controller == nil {
 			return turns, fmt.Errorf("%w: seat %d", ErrMissingPlayerController, seat)
@@ -196,13 +196,15 @@ func (r *SeriesRunner) turnContext(
 	}
 }
 
-func activeRunnerSeat(view *SeatView) domain.Seat {
+func activeRunnerSeat(session *Session, view *SeatView) domain.Seat {
 	if view == nil {
 		return domain.NoSeat
 	}
 	switch view.Phase {
-	case domain.MatchPhaseAttack, domain.MatchPhaseThrowIn, domain.MatchPhaseTaking:
+	case domain.MatchPhaseAttack:
 		return view.Attacker
+	case domain.MatchPhaseThrowIn, domain.MatchPhaseTaking:
+		return activeThrowInRunnerSeat(session, view)
 	case domain.MatchPhaseDefense:
 		return view.Defender
 	case domain.MatchPhaseComplete:
@@ -210,6 +212,33 @@ func activeRunnerSeat(view *SeatView) domain.Seat {
 	default:
 		return domain.NoSeat
 	}
+}
+
+func activeThrowInRunnerSeat(session *Session, view *SeatView) domain.Seat {
+	if session == nil || view == nil {
+		return domain.NoSeat
+	}
+	for _, seat := range throwInPollingOrder(view.Attacker, len(view.HandSizes)) {
+		if seat == view.Defender {
+			continue
+		}
+		if len(session.DecisionContext(seat).LegalActions) > 0 {
+			return seat
+		}
+	}
+	return domain.NoSeat
+}
+
+func throwInPollingOrder(attacker domain.Seat, playerCount int) []domain.Seat {
+	if playerCount <= 0 {
+		return nil
+	}
+	order := make([]domain.Seat, 0, playerCount)
+	start := ((int(attacker) % playerCount) + playerCount) % playerCount
+	for offset := range playerCount {
+		order = append(order, domain.Seat((start+offset)%playerCount))
+	}
+	return order
 }
 
 func runnerMatchID(base MatchID, matchNumber int) MatchID {
