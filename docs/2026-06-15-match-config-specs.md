@@ -23,6 +23,8 @@ but must fail clearly before a match starts.
 - `SeatConfig` owns table occupancy for a single match.
 - `SeriesConfig` owns consecutive-match behavior that needs previous result
   state.
+- `Series` receives and stores `MatchConfig`; `domain.RuleProfile` is derived
+  inside the app layer before a domain match is created.
 - Bot difficulty, AI provider settings, event-log paths, seeds, and controller
   selection stay outside rules config.
 
@@ -93,3 +95,7 @@ preset or DB row should affect new matches only unless a deliberate migration or
 admin action says otherwise. This keeps replay stable: a match event stream must
 record enough config identity/version data to reconstruct the rules that were
 active at creation time.
+
+Series-level updates should follow the same rule. A running series keeps the
+config it was created with; a newly created series can use an updated preset or
+database record.

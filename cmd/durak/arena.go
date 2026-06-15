@@ -116,15 +116,11 @@ func runArenaMatches(
 	if err != nil {
 		return app.SeriesRunResult{}, err
 	}
-	profile, err := config.RuleProfile()
-	if err != nil {
-		return app.SeriesRunResult{}, err
-	}
 	seats := arenaSeats(options.seats)
 	series, err := app.NewSeries(&app.SeriesOptions{
 		SeriesID: "arena-series",
 		Seats:    seats,
-		Profile:  profile,
+		Config:   config,
 	})
 	if err != nil {
 		return app.SeriesRunResult{}, err

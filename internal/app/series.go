@@ -19,7 +19,7 @@ var ErrInvalidSeries = errors.New("invalid series")
 type SeriesOptions struct {
 	SeriesID SeriesID
 	Seats    []domain.Seat
-	Profile  domain.RuleProfile
+	Config   MatchConfig
 }
 
 // SeriesMatchOptions configures one match inside a series.
@@ -42,6 +42,7 @@ type SeriesMatchResult struct {
 type Series struct {
 	id               SeriesID
 	seats            []domain.Seat
+	config           MatchConfig
 	profile          domain.RuleProfile
 	results          []SeriesMatchResult
 	previousLoser    domain.Seat
@@ -56,13 +57,9 @@ func NewSeries(options *SeriesOptions) (*Series, error) {
 	if options.SeriesID == "" {
 		return nil, fmt.Errorf("%w: series id is empty", ErrInvalidSeries)
 	}
-	profile := options.Profile
-	if profile == (domain.RuleProfile{}) {
-		profile = domain.DefaultRuleProfile()
-	}
-	seats := options.Seats
-	if len(seats) == 0 {
-		seats = []domain.Seat{0, 1}
+	config, seats, profile, err := normalizeSeriesConfig(options)
+	if err != nil {
+		return nil, err
 	}
 	if err := validateSeriesSeats(seats, profile); err != nil {
 		return nil, err
@@ -70,6 +67,7 @@ func NewSeries(options *SeriesOptions) (*Series, error) {
 	return &Series{
 		id:      options.SeriesID,
 		seats:   slices.Clone(seats),
+		config:  config,
 		profile: profile,
 	}, nil
 }
@@ -88,6 +86,14 @@ func (s *Series) Seats() []domain.Seat {
 		return nil
 	}
 	return slices.Clone(s.seats)
+}
+
+// Config returns the immutable match configuration used by this series.
+func (s *Series) Config() MatchConfig {
+	if s == nil {
+		return MatchConfig{}
+	}
+	return s.config
 }
 
 // PreviousLoser returns the last completed match loser, if the last match had one.
@@ -121,7 +127,7 @@ func (s *Series) StartMatch(ctx context.Context, options SeriesMatchOptions) (*S
 	if err != nil {
 		return nil, domain.InitialDeal{}, err
 	}
-	if s.hasPreviousLoser {
+	if s.config.Series.Consecutive && s.hasPreviousLoser {
 		deal.FirstAttacker = int(s.seatBefore(s.previousLoser))
 		deal.RandomFirstAttacker = false
 	}
@@ -178,6 +184,43 @@ func (s *Series) CompleteMatch(session *Session) error {
 	s.previousLoser = result.Loser
 	s.hasPreviousLoser = true
 	return nil
+}
+
+func normalizeSeriesConfig(options *SeriesOptions) (MatchConfig, []domain.Seat, domain.RuleProfile, error) {
+	seats := slices.Clone(options.Seats)
+	config := options.Config
+	if config == (MatchConfig{}) {
+		playerCount := len(seats)
+		if playerCount == 0 {
+			playerCount = 2
+		}
+		var err error
+		config, err = NewMatchConfig(RulePresetDefault, playerCount)
+		if err != nil {
+			return MatchConfig{}, nil, domain.RuleProfile{}, fmt.Errorf("%w: %w", ErrInvalidSeries, err)
+		}
+	}
+	if len(seats) == 0 {
+		seats = canonicalSeriesSeats(config.Seats.PlayerCount)
+	}
+	if config.Seats.PlayerCount != len(seats) {
+		return MatchConfig{}, nil, domain.RuleProfile{},
+			fmt.Errorf("%w: config seats %d do not match seat order %d",
+				ErrInvalidSeries, config.Seats.PlayerCount, len(seats))
+	}
+	profile, err := config.RuleProfile()
+	if err != nil {
+		return MatchConfig{}, nil, domain.RuleProfile{}, fmt.Errorf("%w: %w", ErrInvalidSeries, err)
+	}
+	return config, seats, profile, nil
+}
+
+func canonicalSeriesSeats(count int) []domain.Seat {
+	seats := make([]domain.Seat, count)
+	for seat := range seats {
+		seats[seat] = domain.Seat(seat)
+	}
+	return seats
 }
 
 func validateSeriesSeats(seats []domain.Seat, profile domain.RuleProfile) error {

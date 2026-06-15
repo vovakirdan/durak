@@ -206,13 +206,16 @@ func runScriptedMatch(
 
 func mustScriptedSeries(t *testing.T, handSize int) *app.Series {
 	t.Helper()
-	profile := domain.DefaultRuleProfile()
-	profile.InitialHandSize = handSize
-	profile.RedealSameSuitThreshold = handSize + 1
+	config, err := app.NewMatchConfig(app.RulePresetDefault, 2)
+	if err != nil {
+		t.Fatalf("NewMatchConfig returned error: %v", err)
+	}
+	config.Rules.Deal.InitialHandSize = handSize
+	config.Rules.Deal.RedealSameSuitThreshold = handSize + 1
 	series, err := app.NewSeries(&app.SeriesOptions{
 		SeriesID: "scripted-series",
 		Seats:    []domain.Seat{0, 1},
-		Profile:  profile,
+		Config:   config,
 	})
 	if err != nil {
 		t.Fatalf("NewSeries returned error: %v", err)

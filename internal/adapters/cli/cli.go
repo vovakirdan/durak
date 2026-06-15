@@ -31,7 +31,7 @@ var (
 type RunOptions struct {
 	PlayerCount int
 	HumanSeat   domain.Seat
-	Profile     domain.RuleProfile
+	Config      app.MatchConfig
 	Deal        domain.DealOptions
 	Strategy    app.Strategy
 	Bot         app.PlayerController
@@ -43,7 +43,10 @@ type RunOptions struct {
 
 // RunWithOptions starts the local CLI adapter.
 func RunWithOptions(ctx context.Context, in io.Reader, out io.Writer, options *RunOptions) error {
-	runOptions := normalizeRunOptions(options)
+	runOptions, err := normalizeRunOptions(options)
+	if err != nil {
+		return err
+	}
 	if runOptions.EventStore != nil && runOptions.MatchID == "" {
 		return app.ErrEmptyMatchID
 	}
@@ -118,7 +121,7 @@ func newSeriesRunner(options *RunOptions) (*seriesRunner, error) {
 	series, err := app.NewSeries(&app.SeriesOptions{
 		SeriesID: seriesID,
 		Seats:    canonicalSeats(options.PlayerCount),
-		Profile:  options.Profile,
+		Config:   options.Config,
 	})
 	if err != nil {
 		return nil, err
@@ -167,16 +170,24 @@ func matchIDFor(base app.MatchID, matchNumber int) app.MatchID {
 	return app.MatchID(fmt.Sprintf("%s-%d", base, matchNumber))
 }
 
-func normalizeRunOptions(options *RunOptions) RunOptions {
+func normalizeRunOptions(options *RunOptions) (RunOptions, error) {
 	normalized := RunOptions{}
 	if options != nil {
 		normalized = *options
 	}
 	if normalized.PlayerCount == 0 {
-		normalized.PlayerCount = defaultPlayerCount
+		if normalized.Config != (app.MatchConfig{}) {
+			normalized.PlayerCount = normalized.Config.Seats.PlayerCount
+		} else {
+			normalized.PlayerCount = defaultPlayerCount
+		}
 	}
-	if normalized.Profile == (domain.RuleProfile{}) {
-		normalized.Profile = domain.DefaultRuleProfile()
+	if normalized.Config == (app.MatchConfig{}) {
+		config, err := app.NewMatchConfig(app.RulePresetDefault, normalized.PlayerCount)
+		if err != nil {
+			return RunOptions{}, err
+		}
+		normalized.Config = config
 	}
-	return normalized
+	return normalized, nil
 }

@@ -142,8 +142,8 @@
 
 - **Primary contracts/interfaces:**
   - `SessionService`: starts matches, accepts actions, advances bot turns, returns render snapshots.
-  - `Series`: links optional consecutive matches at one table through stable seat order and completed match results.
-  - `MatchConfig`: app-level match creation config that validates rule, seat, and series options before a match starts.
+  - `Series`: links optional consecutive matches at one table through stable seat order, `MatchConfig`, and completed match results.
+  - `MatchConfig`: app-level match creation config that validates rule, seat, and series options before a match starts; `domain.RuleProfile` is derived from it.
   - `PlayerController`: receives a read-only turn context and returns a player decision such as a legal action or concession.
   - `ai.Client`: receives a provider-neutral turn prompt and returns a raw or structured AI response.
   - `SeriesRunner`: executes a series without CLI/TUI ownership and records a compact decision trace.
@@ -304,9 +304,9 @@
 
 ### 13.2 Local Series Match Flow
 
-1. Adapter or future table service creates an app-level `Series` with `series_id`, stable `seat_order`, and rule profile.
+1. Adapter or future table service creates an app-level `Series` with `series_id`, stable `seat_order`, and `MatchConfig`.
 2. Series starts a match by dealing through the domain setup helper.
-3. If the previous completed match had a loser, series sets the first attacker to the seat before that loser before creating the domain match.
+3. If `SeriesConfig.Consecutive` is enabled and the previous completed match had a loser, series sets the first attacker to the seat before that loser before creating the domain match.
 4. Session emits the canonical internal deal event with the final first attacker value, so the match can be replayed without reading prior matches.
 5. When the match completes, series records winner/loser/draw and updates previous-loser state for the next match.
 6. Draw-like completion clears previous-loser state, so the next match falls back to normal setup rules.

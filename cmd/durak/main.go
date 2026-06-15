@@ -70,10 +70,6 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	if err != nil {
 		return err
 	}
-	profile, err := config.RuleProfile()
-	if err != nil {
-		return err
-	}
 	if humanSeat < 0 || humanSeat >= seats {
 		return fmt.Errorf("human-seat must be in range 0..%d", seats-1)
 	}
@@ -97,7 +93,7 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	options := cli.RunOptions{
 		PlayerCount: seats,
 		HumanSeat:   domain.Seat(humanSeat),
-		Profile:     profile,
+		Config:      config,
 		Controllers: controllers,
 	}
 	if seed.set {
