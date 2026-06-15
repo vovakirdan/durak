@@ -53,6 +53,17 @@ func NewSubprocessClient(options SubprocessClientOptions) (*SubprocessClient, er
 	}, nil
 }
 
+// ClientInfo returns non-secret provider metadata for diagnostics.
+func (c *SubprocessClient) ClientInfo() ClientInfo {
+	if c == nil {
+		return ClientInfo{}
+	}
+	return ClientInfo{
+		Provider: "subprocess",
+		Model:    c.command,
+	}
+}
+
 // CompleteTurn runs the configured subprocess for one AI turn.
 func (c *SubprocessClient) CompleteTurn(ctx context.Context, prompt *TurnPrompt) (TurnResponse, error) {
 	if c == nil || c.command == "" {

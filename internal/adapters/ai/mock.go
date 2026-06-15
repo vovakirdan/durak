@@ -5,6 +5,14 @@ import "context"
 // NoisyRawCommandClient is a deterministic local client for parser stress tests.
 type NoisyRawCommandClient struct{}
 
+// ClientInfo returns non-secret provider metadata for diagnostics.
+func (NoisyRawCommandClient) ClientInfo() ClientInfo {
+	return ClientInfo{
+		Provider: "mock",
+		Model:    "noisy-raw-command",
+	}
+}
+
 // CompleteTurn returns occasional invalid first-attempt commands, then a legal hint.
 func (NoisyRawCommandClient) CompleteTurn(ctx context.Context, prompt *TurnPrompt) (TurnResponse, error) {
 	if err := ctx.Err(); err != nil {

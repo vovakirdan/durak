@@ -116,6 +116,7 @@
   - raw command controller for parser and validation stress tests.
   - OpenAI-compatible chat-completions client using the official OpenAI Go SDK.
   - subprocess raw-command client for local wrapper scripts or external LLM CLIs.
+  - private JSONL trace sink for opt-in AI prompt/response diagnostics.
   - future structured AI controller that selects action IDs or decisions directly.
 - **Key dependencies:** application/session types, domain value types, text command parsing, the official OpenAI Go SDK for compatible HTTP endpoints, and standard-library process execution for local wrappers. Provider SDKs must stay behind this adapter when introduced.
 - **Why this boundary exists:** AI players should be replaceable and observable without coupling the game core or CLI/TUI loops to model providers.
@@ -315,6 +316,13 @@
 4. The controller parses the command through `internal/adapters/textcmd`.
 5. Parser errors, non-player commands, or illegal choices are returned as controller errors and recorded in controller trace for diagnostics.
 6. Valid action or concession commands become `PlayerDecision` values and continue through `Session.ApplyPlayerDecision`.
+
+When `-ai-trace-log` is configured, the raw AI controller appends a private
+JSONL record for each attempt. The record includes schema version, non-secret
+provider metadata, timing, prompt payload, raw command, token usage when the
+provider reports it, parsed command kind, player decision when valid, and error
+text when invalid. This trace is diagnostic/training input for AI work and is
+separate from the public match event log.
 
 For `ai-openai`, the client serializes the provider-neutral prompt into a chat
 completion request and sends it to the configured OpenAI-compatible base URL

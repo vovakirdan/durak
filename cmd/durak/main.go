@@ -63,16 +63,21 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	if err != nil {
 		return err
 	}
-	botController, err := newPlayerController(&playerControllerConfig{
-		Kind:     botName,
-		Seed:     seed.value,
-		Seeded:   seed.set,
-		Seat:     domain.Seat(1),
-		Fallback: simpleFallbackController(),
-		AI:       aiClient,
-	})
+	aiTraceSink, err := aiConfig.openTraceSink()
 	if err != nil {
 		return err
+	}
+	botController, err := newPlayerController(&playerControllerConfig{
+		Kind:      botName,
+		Seed:      seed.value,
+		Seeded:    seed.set,
+		Seat:      domain.Seat(1),
+		Fallback:  simpleFallbackController(),
+		TraceSink: aiTraceSink,
+		AI:        aiClient,
+	})
+	if err != nil {
+		return closeAITraceSink(aiTraceSink, err)
 	}
 	options := cli.RunOptions{
 		Profile: profile,
@@ -84,12 +89,12 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	if eventLogPath != "" {
 		store, err := storage.NewJSONLEventStore(eventLogPath)
 		if err != nil {
-			return err
+			return closeAITraceSink(aiTraceSink, err)
 		}
 		if matchID == "" {
 			generatedID, err := newMatchID()
 			if err != nil {
-				return err
+				return closeAITraceSink(aiTraceSink, err)
 			}
 			matchID = string(generatedID)
 		}
@@ -97,7 +102,7 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		options.MatchID = app.MatchID(matchID)
 	}
 
-	return cli.RunWithOptions(ctx, in, out, &options)
+	return closeAITraceSink(aiTraceSink, cli.RunWithOptions(ctx, in, out, &options))
 }
 
 type seedFlag struct {

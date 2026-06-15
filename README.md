@@ -79,6 +79,20 @@ AI config can also come from `DURAK_AI_BASE_URL`, `DURAK_AI_API_KEY`, and
 `DURAK_AI_MODEL` (`OPENAI_BASE_URL`, `OPENAI_API_KEY`, and `OPENAI_MODEL` are
 accepted as fallbacks).
 
+Append private raw AI decision traces to a local JSONL log with:
+
+```sh
+DURAK_AI_API_KEY=... go run ./cmd/durak \
+  -seed 42 \
+  -bot ai-openai \
+  -ai-model gpt-4o-mini \
+  -ai-trace-log .cache/ai-trace.jsonl
+```
+
+The AI trace log contains provider metadata, prompt state, private AI hand,
+raw command text, token usage when reported, and parse result. It is created as
+`0600` local diagnostic data; do not commit or share it as a public event log.
+
 Append public match events to a local JSONL log with:
 
 ```sh
@@ -109,6 +123,9 @@ uniformly from legal actions and does not evaluate the position, while
 `ai-raw-mock` intentionally exercises raw command parsing and then retries with
 legal text commands. Arena uses `-rules default` unless another supported
 preset is provided later.
+
+Arena can also append private AI decision traces with `-ai-trace-log`, which is
+useful for long-running AI-vs-AI sessions that will be analyzed after the run.
 
 External raw AI processes receive a JSON object containing visible state,
 private hand, legal command hints, and previous parse errors. They should print

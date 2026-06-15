@@ -13,12 +13,13 @@ import (
 const defaultRawAITimeout = 30 * time.Second
 
 type aiFlags struct {
-	command string
-	args    repeatedStringFlag
-	timeout time.Duration
-	baseURL string
-	apiKey  string
-	model   string
+	command      string
+	args         repeatedStringFlag
+	timeout      time.Duration
+	baseURL      string
+	apiKey       string
+	model        string
+	traceLogPath string
 }
 
 type repeatedStringFlag []string
@@ -48,6 +49,7 @@ func (f *aiFlags) bind(flags *flag.FlagSet) {
 	flags.StringVar(&f.baseURL, "ai-base-url", f.baseURL, "OpenAI-compatible API base URL for ai-openai")
 	flags.StringVar(&f.apiKey, "ai-api-key", f.apiKey, "OpenAI-compatible API key for ai-openai; prefer env in shared shells")
 	flags.StringVar(&f.model, "ai-model", f.model, "OpenAI-compatible chat model for ai-openai")
+	flags.StringVar(&f.traceLogPath, "ai-trace-log", "", "append private raw AI command attempts to a JSONL file")
 }
 
 func (f *aiFlags) subprocessClient() (ai.Client, error) {
@@ -87,6 +89,27 @@ func (f *aiFlags) clientForKind(kind string) (ai.Client, error) {
 	default:
 		return nil, nil
 	}
+}
+
+func (f *aiFlags) openTraceSink() (*ai.JSONLTraceSink, error) {
+	if f.traceLogPath == "" {
+		return nil, nil
+	}
+	sink, err := ai.NewJSONLTraceSink(f.traceLogPath)
+	if err != nil {
+		return nil, fmt.Errorf("create ai trace log: %w", err)
+	}
+	return sink, nil
+}
+
+func closeAITraceSink(sink *ai.JSONLTraceSink, runErr error) error {
+	if sink == nil {
+		return runErr
+	}
+	if closeErr := sink.Close(); runErr == nil && closeErr != nil {
+		return closeErr
+	}
+	return runErr
 }
 
 func (f *repeatedStringFlag) Set(value string) error {

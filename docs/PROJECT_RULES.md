@@ -128,6 +128,7 @@ Status: Approved.
 - **Mandatory:** Provider SDKs, credentials, prompts, and transport details must stay out of domain and application packages.
 - **Mandatory:** OpenAI-compatible HTTP providers must be configured through explicit base URL, model, and API key settings; secrets should come from environment variables in normal use.
 - **Mandatory:** External-process AI wrappers must communicate through explicit stdin/stdout protocols and must not receive mutable session handles.
+- **Mandatory:** AI decision traces are opt-in private artifacts; they may contain hidden AI hand data and prompts, but must not contain API keys, tokens, or full environment dumps.
 - **Default:** Prefer OpenAI-compatible HTTP providers over CLI helper transports for playable AI opponents.
 - **Review trigger:** A real AI provider integration requires timeout, retry, redaction, and secret-handling review.
 
@@ -159,7 +160,7 @@ Status: Approved.
 - **Mandatory:** Future `.env` files containing real values must be gitignored.
 - **Mandatory:** Committed examples may use `.env.example` or sample config with fake values only.
 - **Mandatory:** Validate untrusted boundary input: CLI commands, future SSH commands, future config files, future AI responses, and future persisted event imports.
-- **Mandatory:** Logs must not include secrets, private keys, access tokens, full environment dumps, hidden player cards in public contexts, or raw AI prompts containing sensitive context.
+- **Mandatory:** Public logs must not include secrets, private keys, access tokens, full environment dumps, hidden player cards, or raw AI prompts. Explicit private AI trace logs are the only current exception for AI prompt/hand diagnostics.
 - **Default:** Use least privilege for future daemon credentials and database accounts.
 - **Review trigger:** Any new external service, AI provider, network listener, or persistence mechanism requires security review in the PR/changeset.
 

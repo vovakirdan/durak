@@ -34,12 +34,14 @@ func TestOpenAICompatibleClientSendsChatCompletion(t *testing.T) {
 					"message":{"role":"assistant","content":"command: attack 6C"},
 					"finish_reason":"stop"
 				}
-			]
+			],
+			"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}
 		}`))
 	}))
 	t.Cleanup(server.Close)
+	baseURL := server.URL + "/v1"
 	client := mustOpenAICompatibleClient(t, ai.OpenAICompatibleClientOptions{
-		BaseURL: server.URL + "/v1",
+		BaseURL: baseURL,
 		APIKey:  "test-key",
 		Model:   "test-model",
 		Timeout: time.Second,
@@ -51,6 +53,12 @@ func TestOpenAICompatibleClientSendsChatCompletion(t *testing.T) {
 	}
 	if response.TextCommand != "attack 6C" {
 		t.Fatalf("TextCommand = %q, want attack command", response.TextCommand)
+	}
+	if response.Usage.TotalTokens != 12 {
+		t.Fatalf("usage = %+v, want token usage", response.Usage)
+	}
+	if info := client.ClientInfo(); info.Provider != "openai-compatible" || info.BaseURL != baseURL {
+		t.Fatalf("ClientInfo = %+v, want OpenAI-compatible metadata", info)
 	}
 	if gotPath != "/v1/chat/completions" {
 		t.Fatalf("path = %q, want chat completions path", gotPath)
@@ -133,6 +141,18 @@ func TestNewOpenAICompatibleClientRequiresAPIKeyForDefaultEndpoint(t *testing.T)
 	_, err := ai.NewOpenAICompatibleClient(ai.OpenAICompatibleClientOptions{Model: "test-model"})
 	if !errors.Is(err, ai.ErrMissingOpenAIAPIKey) {
 		t.Fatalf("error = %v, want ErrMissingOpenAIAPIKey", err)
+	}
+}
+
+func TestOpenAICompatibleClientInfoRedactsBaseURLCredentials(t *testing.T) {
+	client := mustOpenAICompatibleClient(t, ai.OpenAICompatibleClientOptions{
+		BaseURL: "http://user:secret@example.test/v1?api_key=secret#fragment",
+		Model:   "test-model",
+		Timeout: time.Second,
+	})
+
+	if info := client.ClientInfo(); info.BaseURL != "http://example.test/v1" {
+		t.Fatalf("BaseURL = %q, want redacted URL", info.BaseURL)
 	}
 }
 

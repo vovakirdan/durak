@@ -46,9 +46,15 @@ func runArena(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return err
 	}
 	rawAIStats := &arenaRawAIStats{}
-	result, err := runArenaMatches(ctx, &options, rawAIStats)
+	aiTraceSink, err := options.aiConfig.openTraceSink()
 	if err != nil {
 		return err
+	}
+	traceSink := ai.CombineTraceSinks(rawAIStats, aiTraceSink)
+	result, err := runArenaMatches(ctx, &options, traceSink)
+	closeErr := closeAITraceSink(aiTraceSink, err)
+	if closeErr != nil {
+		return closeErr
 	}
 	return writeArenaSummary(out, &options, summarizeArena(result, rawAIStats.summary()))
 }

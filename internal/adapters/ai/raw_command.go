@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/vovakirdan/durak/internal/adapters/textcmd"
 	"github.com/vovakirdan/durak/internal/app"
@@ -63,11 +64,16 @@ func (c *RawCommandController) Decide(ctx context.Context, turn *app.TurnContext
 	previousErrors := make([]string, 0)
 	for attempt := 1; attempt <= c.maxAttempts; attempt++ {
 		prompt := buildRawCommandPrompt(turn, attempt, previousErrors)
+		startedAt := time.Now()
 		trace := RawCommandTrace{
-			Prompt: cloneTurnPrompt(&prompt),
+			Prompt:    cloneTurnPrompt(&prompt),
+			Client:    clientInfo(c.client),
+			StartedAt: startedAt,
 		}
 		response, err := c.client.CompleteTurn(ctx, &prompt)
+		trace.Duration = time.Since(startedAt)
 		trace.RawCommand = response.TextCommand
+		trace.Usage = response.Usage
 		if err != nil {
 			trace.Err = err.Error()
 			c.recordTrace(&trace)

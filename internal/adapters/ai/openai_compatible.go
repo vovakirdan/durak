@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -34,8 +35,9 @@ type OpenAICompatibleClientOptions struct {
 
 // OpenAICompatibleClient asks an OpenAI-compatible chat endpoint for a raw command.
 type OpenAICompatibleClient struct {
-	client openai.Client
-	model  string
+	client  openai.Client
+	model   string
+	baseURL string
 }
 
 // NewOpenAICompatibleClient creates a raw-command client over /chat/completions.
@@ -65,9 +67,22 @@ func NewOpenAICompatibleClient(options OpenAICompatibleClientOptions) (*OpenAICo
 	}
 
 	return &OpenAICompatibleClient{
-		client: openai.NewClient(requestOptions...),
-		model:  options.Model,
+		client:  openai.NewClient(requestOptions...),
+		model:   options.Model,
+		baseURL: options.BaseURL,
 	}, nil
+}
+
+// ClientInfo returns non-secret provider metadata for diagnostics.
+func (c *OpenAICompatibleClient) ClientInfo() ClientInfo {
+	if c == nil {
+		return ClientInfo{}
+	}
+	return ClientInfo{
+		Provider: "openai-compatible",
+		Model:    c.model,
+		BaseURL:  safeProviderBaseURL(c.baseURL),
+	}
 }
 
 // CompleteTurn runs one chat completion and returns the model's raw command.
@@ -102,7 +117,14 @@ func (c *OpenAICompatibleClient) CompleteTurn(
 	if command == "" {
 		return TurnResponse{}, ErrEmptyOpenAIResponse
 	}
-	return TurnResponse{TextCommand: command}, nil
+	return TurnResponse{
+		TextCommand: command,
+		Usage: TokenUsage{
+			PromptTokens:     response.Usage.PromptTokens,
+			CompletionTokens: response.Usage.CompletionTokens,
+			TotalTokens:      response.Usage.TotalTokens,
+		},
+	}, nil
 }
 
 func marshalProviderPrompt(prompt *TurnPrompt) (string, error) {
@@ -134,4 +156,19 @@ func cleanProviderCommand(output string) string {
 		}
 	}
 	return ""
+}
+
+func safeProviderBaseURL(rawURL string) string {
+	if rawURL == "" {
+		return ""
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return ""
+	}
+	parsed.User = nil
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	return parsed.String()
 }

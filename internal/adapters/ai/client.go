@@ -22,6 +22,18 @@ type Client interface {
 	CompleteTurn(context.Context, *TurnPrompt) (TurnResponse, error)
 }
 
+// ClientInfo describes a configured AI provider without secrets.
+type ClientInfo struct {
+	Provider string `json:"provider"`
+	Model    string `json:"model,omitempty"`
+	BaseURL  string `json:"base_url,omitempty"`
+}
+
+// ClientInfoProvider exposes non-secret provider metadata for traces.
+type ClientInfoProvider interface {
+	ClientInfo() ClientInfo
+}
+
 // ClientFunc adapts a function into a Client.
 type ClientFunc func(context.Context, *TurnPrompt) (TurnResponse, error)
 
@@ -56,6 +68,14 @@ type ActionOption struct {
 // TurnResponse is the provider-neutral AI answer.
 type TurnResponse struct {
 	TextCommand string
+	Usage       TokenUsage
+}
+
+// TokenUsage is provider-reported token accounting when available.
+type TokenUsage struct {
+	PromptTokens     int64 `json:"prompt_tokens"`
+	CompletionTokens int64 `json:"completion_tokens"`
+	TotalTokens      int64 `json:"total_tokens"`
 }
 
 func buildRawCommandPrompt(turn *app.TurnContext, attempt int, previousErrors []string) TurnPrompt {

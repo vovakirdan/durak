@@ -86,6 +86,27 @@ func TestRunArenaAcceptsRawAIController(t *testing.T) {
 	}
 }
 
+func TestRunArenaWritesAITraceLog(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	path := filepath.Join(t.TempDir(), "ai-trace.jsonl")
+
+	err := run(t.Context(), []string{
+		"arena",
+		"-matches", "1",
+		"-seed", "42",
+		"-max-actions", "800",
+		"-p0", "simple",
+		"-p1", "ai-raw-mock",
+		"-ai-trace-log", path,
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run arena returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	assertAITraceLog(t, path, `"client":{"provider":"mock","model":"noisy-raw-command"`)
+}
+
 func TestRunArenaAcceptsRawExecAIController(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -291,6 +312,23 @@ func TestRunPlayAcceptsRawExecAIController(t *testing.T) {
 	}
 }
 
+func TestRunPlayWritesAITraceLog(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	path := filepath.Join(t.TempDir(), "play-ai-trace.jsonl")
+
+	err := run(t.Context(), []string{
+		"-seed", "42",
+		"-bot", "ai-raw-mock",
+		"-ai-trace-log", path,
+	}, strings.NewReader("1\nq\n"), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run play returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	assertAITraceLog(t, path, `"client":{"provider":"mock","model":"noisy-raw-command"`)
+}
+
 func TestRunPlayAcceptsOpenAIController(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -372,6 +410,25 @@ func writeTestExecutable(t *testing.T, contents string) string {
 		t.Fatalf("WriteFile returned error: %v", err)
 	}
 	return path
+}
+
+func assertAITraceLog(t *testing.T, path string, wantClient string) {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	log := string(data)
+	for _, want := range []string{
+		`"schema_version":1`,
+		wantClient,
+		`"prompt":`,
+		`"raw_command":`,
+	} {
+		if !strings.Contains(log, want) {
+			t.Fatalf("trace log = %q, want %q", log, want)
+		}
+	}
 }
 
 func newOpenAICommandServer(t *testing.T, command string) *httptest.Server {
