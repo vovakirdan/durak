@@ -43,6 +43,7 @@ type Series struct {
 	id               SeriesID
 	seats            []domain.Seat
 	config           MatchConfig
+	configIdentity   MatchConfigIdentity
 	profile          domain.RuleProfile
 	results          []SeriesMatchResult
 	previousLoser    domain.Seat
@@ -61,14 +62,19 @@ func NewSeries(options *SeriesOptions) (*Series, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := validateSeriesSeats(seats, profile); err != nil {
-		return nil, err
+	if seatErr := validateSeriesSeats(seats, profile); seatErr != nil {
+		return nil, seatErr
+	}
+	configIdentity, err := config.Identity()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidSeries, err)
 	}
 	return &Series{
-		id:      options.SeriesID,
-		seats:   slices.Clone(seats),
-		config:  config,
-		profile: profile,
+		id:             options.SeriesID,
+		seats:          slices.Clone(seats),
+		config:         config,
+		configIdentity: configIdentity,
+		profile:        profile,
 	}, nil
 }
 
@@ -94,6 +100,14 @@ func (s *Series) Config() MatchConfig {
 		return MatchConfig{}
 	}
 	return s.config
+}
+
+// ConfigIdentity returns the stable identity for matches started by this series.
+func (s *Series) ConfigIdentity() MatchConfigIdentity {
+	if s == nil {
+		return MatchConfigIdentity{}
+	}
+	return s.configIdentity
 }
 
 // PreviousLoser returns the last completed match loser, if the last match had one.
@@ -138,6 +152,7 @@ func (s *Series) StartMatch(ctx context.Context, options SeriesMatchOptions) (*S
 	}
 	session, err := NewSessionWithOptions(ctx, match, SessionOptions{
 		MatchID:            options.MatchID,
+		ConfigIdentity:     &s.configIdentity,
 		EventStore:         options.EventStore,
 		InternalEventStore: options.InternalEventStore,
 		InitialDeal:        &deal,

@@ -96,6 +96,12 @@ admin action says otherwise. This keeps replay stable: a match event stream must
 record enough config identity/version data to reconstruct the rules that were
 active at creation time.
 
+The current in-process contract records `MatchConfigIdentity` on the initial
+`match_started` event. It contains the config schema version, rule preset,
+derived rule profile, and a stable hash of the validated Go config. It is a
+lookup/verification key for future persisted config snapshots, not a replacement
+for storing the full snapshot when configs can come from files or a database.
+
 Series-level updates should follow the same rule. A running series keeps the
 config it was created with; a newly created series can use an updated preset or
 database record.

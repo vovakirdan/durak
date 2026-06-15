@@ -11,6 +11,7 @@ import (
 
 func TestBuildMatchSummarySupportsSeatSlices(t *testing.T) {
 	events := historyEvents("match-1", 3, domain.Seat(2), domain.Seat(0))
+	identity := historyConfigIdentity()
 
 	summary, err := app.BuildMatchSummary(events)
 	if err != nil {
@@ -19,6 +20,9 @@ func TestBuildMatchSummarySupportsSeatSlices(t *testing.T) {
 
 	if summary.MatchID != "match-1" {
 		t.Fatalf("MatchID = %q, want match-1", summary.MatchID)
+	}
+	if summary.ConfigIdentity != identity {
+		t.Fatalf("ConfigIdentity = %+v, want %+v", summary.ConfigIdentity, identity)
 	}
 	if !slices.Equal(summary.Seats, []domain.Seat{0, 1, 2}) {
 		t.Fatalf("Seats = %v, want [0 1 2]", summary.Seats)
@@ -93,8 +97,9 @@ func historyEvents(matchID app.MatchID, playerCount int, firstAttacker, defender
 	}
 	return []app.Event{
 		{
-			MatchID:  matchID,
-			Sequence: 1,
+			MatchID:        matchID,
+			Sequence:       1,
+			ConfigIdentity: historyConfigIdentity(),
 			Domain: domain.Event{
 				Kind: domain.EventKindMatchStarted,
 				Started: &domain.MatchStartedEvent{
@@ -141,5 +146,14 @@ func historyEvents(matchID app.MatchID, playerCount int, firstAttacker, defender
 				},
 			},
 		},
+	}
+}
+
+func historyConfigIdentity() app.MatchConfigIdentity {
+	return app.MatchConfigIdentity{
+		SchemaVersion: app.CurrentMatchConfigSchemaVersion,
+		RulePreset:    app.RulePresetDefault,
+		RuleProfile:   "default",
+		Hash:          "sha256:history",
 	}
 }

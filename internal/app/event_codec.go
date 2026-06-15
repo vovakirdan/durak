@@ -46,7 +46,7 @@ func NewEventEnvelope(event *Event) (EventEnvelope, error) {
 		return EventEnvelope{}, fmt.Errorf("%w: sequence is zero", ErrInvalidEventEnvelope)
 	}
 
-	kind, payload, err := encodeDomainEvent(&event.Domain)
+	kind, payload, err := encodeDomainEvent(&event.Domain, event.ConfigIdentity)
 	if err != nil {
 		return EventEnvelope{}, err
 	}
@@ -83,14 +83,15 @@ func (e *EventEnvelope) Event() (Event, error) {
 		return Event{}, fmt.Errorf("%w: visibility %q", ErrInvalidEventEnvelope, e.Visibility)
 	}
 
-	event, err := decodeDomainEvent(e.Kind, e.Payload)
+	event, config, err := decodeDomainEvent(e.Kind, e.Payload)
 	if err != nil {
 		return Event{}, err
 	}
 	return Event{
-		MatchID:  e.MatchID,
-		Sequence: e.Sequence,
-		Domain:   event,
+		MatchID:        e.MatchID,
+		Sequence:       e.Sequence,
+		ConfigIdentity: config,
+		Domain:         event,
 	}, nil
 }
 
@@ -116,7 +117,10 @@ func UnmarshalEventJSON(data []byte) (Event, error) {
 	return (&envelope).Event()
 }
 
-func encodeDomainEvent(event *domain.Event) (kind string, payload any, err error) {
+func encodeDomainEvent(
+	event *domain.Event,
+	config MatchConfigIdentity,
+) (kind string, payload any, err error) {
 	if event == nil {
 		return "", nil, fmt.Errorf("%w: domain event is nil", ErrInvalidEventEnvelope)
 	}
@@ -125,7 +129,7 @@ func encodeDomainEvent(event *domain.Event) (kind string, payload any, err error
 		if event.Started == nil {
 			return "", nil, missingPayload(event.Kind)
 		}
-		return eventNameMatchStarted, encodeMatchStarted(event.Started), nil
+		return eventNameMatchStarted, encodeMatchStarted(event.Started, config), nil
 	case domain.EventKindDeal:
 		if event.Deal == nil {
 			return "", nil, missingPayload(event.Kind)
@@ -177,46 +181,47 @@ func encodeDomainEvent(event *domain.Event) (kind string, payload any, err error
 	}
 }
 
-func decodeDomainEvent(kind string, payload json.RawMessage) (domain.Event, error) {
+func decodeDomainEvent(kind string, payload json.RawMessage) (domain.Event, MatchConfigIdentity, error) {
 	switch kind {
 	case eventNameMatchStarted:
-		event, err := decodeMatchStarted(payload)
-		return domain.Event{Kind: domain.EventKindMatchStarted, Started: &event}, err
+		event, config, err := decodeMatchStarted(payload)
+		return domain.Event{Kind: domain.EventKindMatchStarted, Started: &event}, config, err
 	case eventNameDeal:
 		event, err := decodeDeal(payload)
-		return domain.Event{Kind: domain.EventKindDeal, Deal: &event}, err
+		return domain.Event{Kind: domain.EventKindDeal, Deal: &event}, MatchConfigIdentity{}, err
 	case eventNameAttack, eventNameDefend, eventNameThrowIn, eventNamePassThrowIn,
 		eventNameTransfer, eventNameTake, eventNameFinishDefense, eventNameFinishTake:
 		action, err := decodeActionEvent(payload)
 		if err != nil {
-			return domain.Event{}, err
+			return domain.Event{}, MatchConfigIdentity{}, err
 		}
 		actionName, err := encodeActionKind(action.Action.Kind)
 		if err != nil {
-			return domain.Event{}, err
+			return domain.Event{}, MatchConfigIdentity{}, err
 		}
 		if actionName != kind {
-			return domain.Event{}, fmt.Errorf("%w: action kind %q does not match event kind %q", ErrInvalidEventEnvelope, actionName, kind)
+			return domain.Event{}, MatchConfigIdentity{},
+				fmt.Errorf("%w: action kind %q does not match event kind %q", ErrInvalidEventEnvelope, actionName, kind)
 		}
 		eventKind, ok := domainKindForEventName(kind)
 		if !ok {
-			return domain.Event{}, unknownEventName(kind)
+			return domain.Event{}, MatchConfigIdentity{}, unknownEventName(kind)
 		}
-		return domain.Event{Kind: eventKind, Action: &action}, nil
+		return domain.Event{Kind: eventKind, Action: &action}, MatchConfigIdentity{}, nil
 	case eventNameRefill:
 		event, err := decodeRefill(payload)
-		return domain.Event{Kind: domain.EventKindRefill, Refill: &event}, err
+		return domain.Event{Kind: domain.EventKindRefill, Refill: &event}, MatchConfigIdentity{}, err
 	case eventNameRoundEnded:
 		event, err := decodeRoundEnded(payload)
-		return domain.Event{Kind: domain.EventKindRoundEnded, RoundEnded: &event}, err
+		return domain.Event{Kind: domain.EventKindRoundEnded, RoundEnded: &event}, MatchConfigIdentity{}, err
 	case eventNameConcede:
 		event, err := decodeConcede(payload)
-		return domain.Event{Kind: domain.EventKindConcede, Concede: &event}, err
+		return domain.Event{Kind: domain.EventKindConcede, Concede: &event}, MatchConfigIdentity{}, err
 	case eventNameMatchEnded:
 		event, err := decodeMatchEnded(payload)
-		return domain.Event{Kind: domain.EventKindMatchEnded, MatchEnded: &event}, err
+		return domain.Event{Kind: domain.EventKindMatchEnded, MatchEnded: &event}, MatchConfigIdentity{}, err
 	default:
-		return domain.Event{}, unknownEventName(kind)
+		return domain.Event{}, MatchConfigIdentity{}, unknownEventName(kind)
 	}
 }
 

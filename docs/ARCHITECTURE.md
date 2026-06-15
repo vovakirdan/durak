@@ -162,6 +162,7 @@
   - In-process Go interfaces for MVP.
   - Application events include match id and sequence number around structured domain event payloads.
   - Stable serialized events use a JSON envelope: `schema_version`, `match_id`, `sequence`, `kind`, `visibility`, and `payload`.
+  - `match_started.payload.config` stores the app-level match config identity: config schema version, rule preset, derived rule profile, and a stable config hash. It intentionally does not store the full config snapshot yet.
   - The canonical match source of truth is an internal event stream. Public events are a safe projection/export of that stream, not the full replay source.
   - Current CLI JSONL output writes only `visibility=public` events. It is suitable for visible history and debugging, but it is not sufficient for exact resume or AI training data.
   - Internal events use `visibility=internal` and may include hidden state such as initial hands and stock order. Hidden state must never be mixed into public replay data.
@@ -186,6 +187,7 @@
 - **Event stream roles:**
   - Public events are safe for visible history, public replay, and local JSONL export.
   - Internal events are the canonical per-match stream for exact replay/resume. The initial internal deal records hidden hands and stock order; later accepted actions can be replayed from that state.
+  - Config identity is attached to the initial `match_started` event in both public and internal streams. Future durable stores can use this identity to resolve or verify the full rule snapshot before replay, statistics, or model-training export.
   - `pass_throw_in` is a first-class action event because declining an optional throw-in affects whether a round can close and must be replayable.
   - Future internal events may include additional hidden state such as explicit draw cards, seeds, or decision context when needed for faster reconstruction or model training.
   - Snapshots are derived checkpoints for faster resume/replay; they are not the source of truth.
@@ -231,6 +233,7 @@
 - **Config loading approach:**
   - MVP uses built-in Go rule presets exposed by CLI flags, starting with `-rules default`.
   - The first config contract is an in-process `MatchConfig`/`RuleConfig` value object, not a file format.
+  - `MatchConfigIdentity` is derived from a validated config and is recorded at match start. It gives history and future DB rows a compact reference before external config snapshots exist.
   - Bot/controller selection is also flag-driven in CLI and arena, starting with `simple` and `random`.
   - Future per-match configuration sources may be files, database records, or daemon control-plane requests.
   - Runners receive immutable config values at match creation; live config updates affect new matches unless an explicit migration/admin flow says otherwise.

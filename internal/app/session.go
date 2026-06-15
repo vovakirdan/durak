@@ -29,12 +29,13 @@ type Strategy interface {
 
 // Session orchestrates one active match for adapters and bots.
 type Session struct {
-	match         *domain.Match
-	matchID       MatchID
-	eventStore    EventStore
-	internalStore InternalEventStore
-	initialDeal   *domain.InitialDeal
-	nextSequence  uint64
+	match          *domain.Match
+	matchID        MatchID
+	configIdentity MatchConfigIdentity
+	eventStore     EventStore
+	internalStore  InternalEventStore
+	initialDeal    *domain.InitialDeal
+	nextSequence   uint64
 }
 
 // SessionOptions configures optional session ports. EventStore and
@@ -42,6 +43,7 @@ type Session struct {
 // them as an atomic cross-store transaction.
 type SessionOptions struct {
 	MatchID            MatchID
+	ConfigIdentity     *MatchConfigIdentity
 	EventStore         EventStore
 	InternalEventStore InternalEventStore
 	InitialDeal        *domain.InitialDeal
@@ -66,12 +68,17 @@ func NewSessionWithOptions(ctx context.Context, match *domain.Match, options Ses
 	if options.InternalEventStore != nil && options.InitialDeal == nil {
 		return nil, ErrMissingInitialDeal
 	}
+	configIdentity := MatchConfigIdentity{}
+	if options.ConfigIdentity != nil {
+		configIdentity = *options.ConfigIdentity
+	}
 	session := &Session{
-		match:         match,
-		matchID:       options.MatchID,
-		eventStore:    options.EventStore,
-		internalStore: options.InternalEventStore,
-		initialDeal:   cloneInitialDeal(options.InitialDeal),
+		match:          match,
+		matchID:        options.MatchID,
+		configIdentity: configIdentity,
+		eventStore:     options.EventStore,
+		internalStore:  options.InternalEventStore,
+		initialDeal:    cloneInitialDeal(options.InitialDeal),
 	}
 	if err := session.emitPendingEvents(ctx); err != nil {
 		return nil, err
@@ -207,9 +214,10 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 	storedEvents := make([]Event, len(events))
 	for i, event := range events {
 		storedEvents[i] = Event{
-			MatchID:  s.matchID,
-			Sequence: s.nextSequence + uint64(i) + 1,
-			Domain:   event,
+			MatchID:        s.matchID,
+			Sequence:       s.nextSequence + uint64(i) + 1,
+			ConfigIdentity: s.eventConfigIdentity(event),
+			Domain:         event,
 		}
 	}
 	if s.internalStore != nil {
@@ -235,9 +243,10 @@ func (s *Session) internalEvents(events []domain.Event) ([]InternalEvent, error)
 	storedEvents := make([]InternalEvent, len(events))
 	for i, event := range events {
 		internalEvent := InternalEvent{
-			MatchID:  s.matchID,
-			Sequence: s.nextSequence + uint64(i) + 1,
-			Domain:   event,
+			MatchID:        s.matchID,
+			Sequence:       s.nextSequence + uint64(i) + 1,
+			ConfigIdentity: s.eventConfigIdentity(event),
+			Domain:         event,
 		}
 		if event.Kind == domain.EventKindDeal {
 			if s.initialDeal == nil {
@@ -253,6 +262,13 @@ func (s *Session) internalEvents(events []domain.Event) ([]InternalEvent, error)
 		storedEvents[i] = internalEvent
 	}
 	return storedEvents, nil
+}
+
+func (s *Session) eventConfigIdentity(event domain.Event) MatchConfigIdentity {
+	if event.Kind == domain.EventKindMatchStarted {
+		return s.configIdentity
+	}
+	return MatchConfigIdentity{}
 }
 
 func cloneInitialDeal(deal *domain.InitialDeal) *domain.InitialDeal {

@@ -14,6 +14,7 @@ var ErrInvalidMatchHistory = errors.New("invalid match history")
 // MatchSummary is an event-derived read model for match lists and statistics.
 type MatchSummary struct {
 	MatchID           MatchID
+	ConfigIdentity    MatchConfigIdentity
 	RuleProfile       string
 	Seats             []domain.Seat
 	InitialHandSizes  []int
@@ -95,6 +96,7 @@ func applySummaryEvent(summary *MatchSummary, event *Event) error {
 		if event.Domain.Started == nil {
 			return missingHistoryPayload(event.Domain.Kind)
 		}
+		summary.ConfigIdentity = event.ConfigIdentity
 		summary.RuleProfile = event.Domain.Started.RuleProfile
 		return setSummarySeats(summary, event.Domain.Started.PlayerCount)
 	case domain.EventKindDeal:

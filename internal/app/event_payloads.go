@@ -30,8 +30,16 @@ const (
 )
 
 type matchStartedPayload struct {
-	PlayerCount int    `json:"player_count"`
-	RuleProfile string `json:"rule_profile"`
+	PlayerCount int                         `json:"player_count"`
+	RuleProfile string                      `json:"rule_profile"`
+	Config      *matchConfigIdentityPayload `json:"config,omitempty"`
+}
+
+type matchConfigIdentityPayload struct {
+	SchemaVersion int    `json:"schema_version"`
+	RulePreset    string `json:"rule_preset,omitempty"`
+	RuleProfile   string `json:"rule_profile,omitempty"`
+	Hash          string `json:"hash"`
 }
 
 type dealPayload struct {
@@ -90,21 +98,63 @@ type cardPayload struct {
 	Suit string `json:"suit"`
 }
 
-func encodeMatchStarted(event *domain.MatchStartedEvent) matchStartedPayload {
+func encodeMatchStarted(event *domain.MatchStartedEvent, config MatchConfigIdentity) matchStartedPayload {
 	return matchStartedPayload{
 		PlayerCount: event.PlayerCount,
 		RuleProfile: event.RuleProfile,
+		Config:      encodeMatchConfigIdentity(config),
 	}
 }
 
-func decodeMatchStarted(payload json.RawMessage) (domain.MatchStartedEvent, error) {
+func decodeMatchStarted(payload json.RawMessage) (domain.MatchStartedEvent, MatchConfigIdentity, error) {
 	var event matchStartedPayload
 	if err := decodePayload(payload, &event); err != nil {
-		return domain.MatchStartedEvent{}, err
+		return domain.MatchStartedEvent{}, MatchConfigIdentity{}, err
+	}
+	config, err := decodeMatchConfigIdentity(event.Config, event.RuleProfile)
+	if err != nil {
+		return domain.MatchStartedEvent{}, MatchConfigIdentity{}, err
 	}
 	return domain.MatchStartedEvent{
 		PlayerCount: event.PlayerCount,
 		RuleProfile: event.RuleProfile,
+	}, config, nil
+}
+
+func encodeMatchConfigIdentity(config MatchConfigIdentity) *matchConfigIdentityPayload {
+	if config.IsZero() {
+		return nil
+	}
+	return &matchConfigIdentityPayload{
+		SchemaVersion: config.SchemaVersion,
+		RulePreset:    config.RulePreset,
+		RuleProfile:   config.RuleProfile,
+		Hash:          config.Hash,
+	}
+}
+
+func decodeMatchConfigIdentity(
+	payload *matchConfigIdentityPayload,
+	fallbackRuleProfile string,
+) (MatchConfigIdentity, error) {
+	if payload == nil {
+		return MatchConfigIdentity{}, nil
+	}
+	if payload.SchemaVersion <= 0 {
+		return MatchConfigIdentity{}, fmt.Errorf("%w: config schema version is empty", ErrInvalidEventEnvelope)
+	}
+	if payload.Hash == "" {
+		return MatchConfigIdentity{}, fmt.Errorf("%w: config hash is empty", ErrInvalidEventEnvelope)
+	}
+	ruleProfile := payload.RuleProfile
+	if ruleProfile == "" {
+		ruleProfile = fallbackRuleProfile
+	}
+	return MatchConfigIdentity{
+		SchemaVersion: payload.SchemaVersion,
+		RulePreset:    payload.RulePreset,
+		RuleProfile:   ruleProfile,
+		Hash:          payload.Hash,
 	}, nil
 }
 

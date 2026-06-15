@@ -107,7 +107,7 @@ func encodeInternalEvent(event *InternalEvent) (kind string, payload any, err er
 		payload, err := encodeInternalDeal(event.Deal)
 		return eventNameDeal, payload, err
 	}
-	return encodeDomainEvent(&event.Domain)
+	return encodeDomainEvent(&event.Domain, event.ConfigIdentity)
 }
 
 func decodeInternalEvent(kind string, payload json.RawMessage) (InternalEvent, error) {
@@ -125,11 +125,11 @@ func decodeInternalEvent(kind string, payload json.RawMessage) (InternalEvent, e
 			Deal: &deal,
 		}, nil
 	}
-	event, err := decodeDomainEvent(kind, payload)
+	event, config, err := decodeDomainEvent(kind, payload)
 	if err != nil {
 		return InternalEvent{}, err
 	}
-	return InternalEvent{Domain: event}, nil
+	return InternalEvent{Domain: event, ConfigIdentity: config}, nil
 }
 
 func encodeInternalDeal(event *InternalDealEvent) (internalDealPayload, error) {

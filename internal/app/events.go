@@ -12,9 +12,10 @@ type MatchID string
 
 // Event is an application-level sequenced domain event.
 type Event struct {
-	MatchID  MatchID
-	Sequence uint64
-	Domain   domain.Event
+	MatchID        MatchID
+	Sequence       uint64
+	ConfigIdentity MatchConfigIdentity
+	Domain         domain.Event
 }
 
 // InternalDealEvent records full setup state needed for exact replay/resume.
@@ -32,10 +33,11 @@ type InternalDealEvent struct {
 
 // InternalEvent is a sequenced canonical event for exact match replay.
 type InternalEvent struct {
-	MatchID  MatchID
-	Sequence uint64
-	Domain   domain.Event
-	Deal     *InternalDealEvent
+	MatchID        MatchID
+	Sequence       uint64
+	ConfigIdentity MatchConfigIdentity
+	Domain         domain.Event
+	Deal           *InternalDealEvent
 }
 
 // EventStore appends sequenced events emitted by active sessions.
@@ -180,9 +182,10 @@ func cloneEvent(e *Event) Event {
 		return Event{}
 	}
 	return Event{
-		MatchID:  e.MatchID,
-		Sequence: e.Sequence,
-		Domain:   e.Domain.Clone(),
+		MatchID:        e.MatchID,
+		Sequence:       e.Sequence,
+		ConfigIdentity: e.ConfigIdentity,
+		Domain:         e.Domain.Clone(),
 	}
 }
 
@@ -209,10 +212,11 @@ func cloneInternalEvent(e *InternalEvent) InternalEvent {
 		return InternalEvent{}
 	}
 	return InternalEvent{
-		MatchID:  e.MatchID,
-		Sequence: e.Sequence,
-		Domain:   e.Domain.Clone(),
-		Deal:     cloneInternalDealEvent(e.Deal),
+		MatchID:        e.MatchID,
+		Sequence:       e.Sequence,
+		ConfigIdentity: e.ConfigIdentity,
+		Domain:         e.Domain.Clone(),
+		Deal:           cloneInternalDealEvent(e.Deal),
 	}
 }
 

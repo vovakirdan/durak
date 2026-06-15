@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -28,6 +29,47 @@ func TestDefaultMatchConfigMapsToDefaultRuleProfile(t *testing.T) {
 	}
 	if config.SchemaVersion != app.CurrentMatchConfigSchemaVersion {
 		t.Fatalf("SchemaVersion = %d, want %d", config.SchemaVersion, app.CurrentMatchConfigSchemaVersion)
+	}
+}
+
+func TestMatchConfigIdentityIsStableAndSensitive(t *testing.T) {
+	config, err := app.NewMatchConfig(app.RulePresetDefault, 3)
+	if err != nil {
+		t.Fatalf("NewMatchConfig returned error: %v", err)
+	}
+
+	identity, err := config.Identity()
+	if err != nil {
+		t.Fatalf("Identity returned error: %v", err)
+	}
+	again, err := config.Identity()
+	if err != nil {
+		t.Fatalf("Identity second call returned error: %v", err)
+	}
+	if identity != again {
+		t.Fatalf("Identity is not stable: %+v then %+v", identity, again)
+	}
+	if identity.SchemaVersion != app.CurrentMatchConfigSchemaVersion {
+		t.Fatalf("SchemaVersion = %d, want %d", identity.SchemaVersion, app.CurrentMatchConfigSchemaVersion)
+	}
+	if identity.RulePreset != app.RulePresetDefault {
+		t.Fatalf("RulePreset = %q, want default", identity.RulePreset)
+	}
+	if identity.RuleProfile != domain.DefaultRuleProfile().Name {
+		t.Fatalf("RuleProfile = %q, want %q", identity.RuleProfile, domain.DefaultRuleProfile().Name)
+	}
+	if !strings.HasPrefix(identity.Hash, "sha256:") || len(identity.Hash) != len("sha256:")+64 {
+		t.Fatalf("Hash = %q, want sha256 hex", identity.Hash)
+	}
+
+	changed := config
+	changed.Seats.PlayerCount = 4
+	changedIdentity, err := changed.Identity()
+	if err != nil {
+		t.Fatalf("changed Identity returned error: %v", err)
+	}
+	if changedIdentity.Hash == identity.Hash {
+		t.Fatalf("changed player count kept same hash %q", identity.Hash)
 	}
 }
 

@@ -122,6 +122,57 @@ func TestMarshalEventJSONUsesStableEnvelope(t *testing.T) {
 	}
 }
 
+func TestMarshalEventJSONIncludesMatchConfigIdentity(t *testing.T) {
+	identity := app.MatchConfigIdentity{
+		SchemaVersion: app.CurrentMatchConfigSchemaVersion,
+		RulePreset:    app.RulePresetDefault,
+		RuleProfile:   "default",
+		Hash:          "sha256:1234567890abcdef",
+	}
+	event := testEvent(domain.Event{
+		Kind:    domain.EventKindMatchStarted,
+		Started: &domain.MatchStartedEvent{PlayerCount: 2, RuleProfile: "default"},
+	})
+	event.ConfigIdentity = identity
+
+	data, err := app.MarshalEventJSON(&event)
+	if err != nil {
+		t.Fatalf("MarshalEventJSON returned error: %v", err)
+	}
+
+	var envelope struct {
+		Payload json.RawMessage `json:"payload"`
+	}
+	if unmarshalErr := json.Unmarshal(data, &envelope); unmarshalErr != nil {
+		t.Fatalf("json.Unmarshal envelope returned error: %v", unmarshalErr)
+	}
+	var payload struct {
+		Config struct {
+			SchemaVersion int    `json:"schema_version"`
+			RulePreset    string `json:"rule_preset"`
+			RuleProfile   string `json:"rule_profile"`
+			Hash          string `json:"hash"`
+		} `json:"config"`
+	}
+	if unmarshalErr := json.Unmarshal(envelope.Payload, &payload); unmarshalErr != nil {
+		t.Fatalf("json.Unmarshal payload returned error: %v", unmarshalErr)
+	}
+	if payload.Config.SchemaVersion != identity.SchemaVersion ||
+		payload.Config.RulePreset != identity.RulePreset ||
+		payload.Config.RuleProfile != identity.RuleProfile ||
+		payload.Config.Hash != identity.Hash {
+		t.Fatalf("payload config = %+v, want %+v", payload.Config, identity)
+	}
+
+	decoded, err := app.UnmarshalEventJSON(data)
+	if err != nil {
+		t.Fatalf("UnmarshalEventJSON returned error: %v", err)
+	}
+	if decoded.ConfigIdentity != identity {
+		t.Fatalf("decoded ConfigIdentity = %+v, want %+v", decoded.ConfigIdentity, identity)
+	}
+}
+
 func TestMarshalInternalEventJSONRoundTripsFullDeal(t *testing.T) {
 	deal := app.InternalDealEvent{
 		Hands: [][]domain.Card{

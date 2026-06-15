@@ -68,6 +68,68 @@ func TestSeriesStartsNextMatchBeforePreviousLoser(t *testing.T) {
 	}
 }
 
+func TestSeriesStartMatchEmitsConfigIdentity(t *testing.T) {
+	ctx := context.Background()
+	config, err := app.NewMatchConfig(app.RulePresetDefault, 3)
+	if err != nil {
+		t.Fatalf("NewMatchConfig returned error: %v", err)
+	}
+	identity, err := config.Identity()
+	if err != nil {
+		t.Fatalf("Identity returned error: %v", err)
+	}
+	series, err := app.NewSeries(&app.SeriesOptions{
+		SeriesID: "series-config",
+		Config:   config,
+	})
+	if err != nil {
+		t.Fatalf("NewSeries returned error: %v", err)
+	}
+	if series.ConfigIdentity() != identity {
+		t.Fatalf("series ConfigIdentity = %+v, want %+v", series.ConfigIdentity(), identity)
+	}
+	publicEvents := app.NewInMemoryEventStore()
+	internalEvents := app.NewInMemoryInternalEventStore()
+
+	_, _, err = series.StartMatch(ctx, app.SeriesMatchOptions{
+		MatchID:            "match-config",
+		EventStore:         publicEvents,
+		InternalEventStore: internalEvents,
+	})
+	if err != nil {
+		t.Fatalf("StartMatch returned error: %v", err)
+	}
+
+	events := publicEvents.EventsForMatch("match-config")
+	if len(events) < 2 {
+		t.Fatalf("public events = %+v, want started and deal", events)
+	}
+	if events[0].ConfigIdentity != identity {
+		t.Fatalf("public started ConfigIdentity = %+v, want %+v", events[0].ConfigIdentity, identity)
+	}
+	if !events[1].ConfigIdentity.IsZero() {
+		t.Fatalf("public deal ConfigIdentity = %+v, want zero", events[1].ConfigIdentity)
+	}
+	summary, err := app.BuildMatchSummary(events)
+	if err != nil {
+		t.Fatalf("BuildMatchSummary returned error: %v", err)
+	}
+	if summary.ConfigIdentity != identity {
+		t.Fatalf("summary ConfigIdentity = %+v, want %+v", summary.ConfigIdentity, identity)
+	}
+
+	canonical := internalEvents.EventsForMatch("match-config")
+	if len(canonical) < 2 {
+		t.Fatalf("internal events = %+v, want started and deal", canonical)
+	}
+	if canonical[0].ConfigIdentity != identity {
+		t.Fatalf("internal started ConfigIdentity = %+v, want %+v", canonical[0].ConfigIdentity, identity)
+	}
+	if !canonical[1].ConfigIdentity.IsZero() {
+		t.Fatalf("internal deal ConfigIdentity = %+v, want zero", canonical[1].ConfigIdentity)
+	}
+}
+
 func TestSeriesConfigCanDisablePreviousLoserOverride(t *testing.T) {
 	ctx := context.Background()
 	config, err := app.NewMatchConfig(app.RulePresetDefault, 2)
