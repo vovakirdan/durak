@@ -59,6 +59,31 @@ func TestRunWithOptionsUsesDeterministicDeal(t *testing.T) {
 	}
 }
 
+func TestRunWithOptionsStartsThreeSeatGame(t *testing.T) {
+	hands := cliThreeSeatHands()
+	deck := testDeckForDeal(hands, testStockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, hands...))
+	var out bytes.Buffer
+
+	err := RunWithOptions(context.Background(), strings.NewReader("q\n"), &out, &RunOptions{
+		PlayerCount: 3,
+		HumanSeat:   domain.Seat(0),
+		Deal: domain.DealOptions{
+			Shuffler: domain.ShuffleFunc(func(cards []domain.Card) {
+				copy(cards, deck)
+			}),
+		},
+		Strategy: firstLegalStrategy(),
+	})
+	if err != nil {
+		t.Fatalf("RunWithOptions returned error: %v", err)
+	}
+
+	output := out.String()
+	if !strings.Contains(output, "Hands: you(0):6 bot(1):6 bot(2):6") {
+		t.Fatalf("output = %q, want three visible seats", output)
+	}
+}
+
 func TestRunWithOptionsEmitsInitialEventsToStore(t *testing.T) {
 	store := app.NewInMemoryEventStore()
 	var out bytes.Buffer
@@ -146,7 +171,6 @@ func TestGameCompletesScriptedRound(t *testing.T) {
 	var out bytes.Buffer
 	game := newGame(session, firstLegalStrategy(), strings.NewReader("1\ndone\n"), &out, gameOptions{
 		humanSeat: defaultHumanSeat,
-		botSeat:   defaultBotSeat,
 	})
 
 	if err := game.run(context.Background()); err != nil {
@@ -159,6 +183,47 @@ func TestGameCompletesScriptedRound(t *testing.T) {
 	}
 	if !strings.Contains(output, "Result: you won") {
 		t.Fatalf("output = %q, want human win", output)
+	}
+}
+
+func TestGameRunsMultiSeatControllerTurns(t *testing.T) {
+	session := mustCLISession(t, domain.InitialDeal{
+		Hands: [][]domain.Card{
+			{{Rank: domain.Six, Suit: domain.Clubs}},
+			{
+				{Rank: domain.Seven, Suit: domain.Clubs},
+				{Rank: domain.Eight, Suit: domain.Diamonds},
+				{Rank: domain.Ace, Suit: domain.Spades},
+			},
+			{{Rank: domain.Six, Suit: domain.Diamonds}},
+		},
+		TrumpIndicator: domain.Card{Rank: domain.Nine, Suit: domain.Hearts},
+		TrumpSuit:      domain.Hearts,
+		FirstAttacker:  0,
+	})
+	var out bytes.Buffer
+	controller := app.StrategyController{Strategy: firstLegalStrategy()}
+	game := newGameWithControllers(session, map[domain.Seat]app.PlayerController{
+		domain.Seat(1): controller,
+		domain.Seat(2): controller,
+	}, strings.NewReader("1\ndone\n"), &out, gameOptions{
+		humanSeat: defaultHumanSeat,
+	})
+
+	if err := game.run(context.Background()); err != nil {
+		t.Fatalf("game run returned error: %v", err)
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"Seat 1: defend 1 with 7C",
+		"Seat 2: throw 6D",
+		"Seat 1: defend 2 with 8D",
+		"Result: you won",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
 	}
 }
 
@@ -175,7 +240,6 @@ func TestGameConcedeCompletesMatch(t *testing.T) {
 	var out bytes.Buffer
 	game := newGame(session, firstLegalStrategy(), strings.NewReader("concede\n"), &out, gameOptions{
 		humanSeat: defaultHumanSeat,
-		botSeat:   defaultBotSeat,
 	})
 
 	if err := game.run(context.Background()); err != nil {
@@ -285,6 +349,35 @@ func cliSeriesHands() [][]domain.Card {
 			{Rank: domain.Six, Suit: domain.Diamonds},
 			{Rank: domain.Seven, Suit: domain.Spades},
 			{Rank: domain.Eight, Suit: domain.Spades},
+		},
+	}
+}
+
+func cliThreeSeatHands() [][]domain.Card {
+	return [][]domain.Card{
+		{
+			{Rank: domain.Six, Suit: domain.Clubs},
+			{Rank: domain.Seven, Suit: domain.Hearts},
+			{Rank: domain.Eight, Suit: domain.Diamonds},
+			{Rank: domain.Nine, Suit: domain.Spades},
+			{Rank: domain.Ten, Suit: domain.Clubs},
+			{Rank: domain.Jack, Suit: domain.Diamonds},
+		},
+		{
+			{Rank: domain.Queen, Suit: domain.Clubs},
+			{Rank: domain.Ten, Suit: domain.Hearts},
+			{Rank: domain.Ace, Suit: domain.Clubs},
+			{Rank: domain.Six, Suit: domain.Diamonds},
+			{Rank: domain.Seven, Suit: domain.Spades},
+			{Rank: domain.Eight, Suit: domain.Spades},
+		},
+		{
+			{Rank: domain.King, Suit: domain.Clubs},
+			{Rank: domain.Jack, Suit: domain.Hearts},
+			{Rank: domain.Queen, Suit: domain.Diamonds},
+			{Rank: domain.Six, Suit: domain.Spades},
+			{Rank: domain.Nine, Suit: domain.Clubs},
+			{Rank: domain.Ace, Suit: domain.Spades},
 		},
 	}
 }

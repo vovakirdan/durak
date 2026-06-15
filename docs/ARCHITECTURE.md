@@ -39,9 +39,10 @@
 ### Local CLI
 
 - **Type:** CLI.
-- **Primary responsibilities:** start a game, show visible state, parse commands, print validation errors, and drive the local human-vs-bot loop.
+- **Primary responsibilities:** start a game, show visible state, parse commands, print validation errors, and drive one local human seat against controller-driven seats.
 - **Internal structure:** command parser, renderer, and loop runner.
 - **Key dependencies:** application/session layer and text command adapter only.
+- **Current boundary:** supports one local human seat with 2..6 total seats; true multi-human input belongs to the future TUI/SSH table surfaces.
 
 ### Raw AI Command Tester
 

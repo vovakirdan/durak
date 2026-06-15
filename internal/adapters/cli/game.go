@@ -13,22 +13,22 @@ import (
 	"github.com/vovakirdan/durak/internal/domain"
 )
 
+var errNoPlayableControllerSeat = errors.New("no playable controller seat")
+
 type game struct {
-	session   *app.Session
-	bot       app.PlayerController
-	humanSeat domain.Seat
-	botSeat   domain.Seat
-	scanner   *bufio.Scanner
-	out       *output
-	renderer  renderer
-	startNext nextMatchFunc
-	complete  completeMatchFunc
-	matchNo   int
+	session     *app.Session
+	controllers map[domain.Seat]app.PlayerController
+	humanSeat   domain.Seat
+	scanner     *bufio.Scanner
+	out         *output
+	renderer    renderer
+	startNext   nextMatchFunc
+	complete    completeMatchFunc
+	matchNo     int
 }
 
 type gameOptions struct {
 	humanSeat domain.Seat
-	botSeat   domain.Seat
 	startNext nextMatchFunc
 	complete  completeMatchFunc
 }
@@ -47,17 +47,28 @@ func newGameWithController(
 	out io.Writer,
 	options gameOptions,
 ) *game {
+	return newGameWithControllers(session, map[domain.Seat]app.PlayerController{
+		defaultBotSeat: bot,
+	}, in, out, options)
+}
+
+func newGameWithControllers(
+	session *app.Session,
+	controllers map[domain.Seat]app.PlayerController,
+	in io.Reader,
+	out io.Writer,
+	options gameOptions,
+) *game {
 	return &game{
-		session:   session,
-		bot:       bot,
-		humanSeat: options.humanSeat,
-		botSeat:   options.botSeat,
-		scanner:   bufio.NewScanner(in),
-		out:       newOutput(out),
-		renderer:  newRenderer(options.humanSeat, options.botSeat),
-		startNext: options.startNext,
-		complete:  options.complete,
-		matchNo:   1,
+		session:     session,
+		controllers: controllers,
+		humanSeat:   options.humanSeat,
+		scanner:     bufio.NewScanner(in),
+		out:         newOutput(out),
+		renderer:    newRenderer(options.humanSeat, controllerSeats(controllers)),
+		startNext:   options.startNext,
+		complete:    options.complete,
+		matchNo:     1,
 	}
 }
 
@@ -70,7 +81,7 @@ func (g *game) run(ctx context.Context) error {
 	}
 
 	for {
-		if err := g.runBotTurns(ctx); err != nil {
+		if err := g.runControllerTurns(ctx); err != nil {
 			return err
 		}
 
@@ -188,29 +199,51 @@ func (g *game) promptNextMatch(ctx context.Context) (bool, error) {
 	}
 }
 
-func (g *game) runBotTurns(ctx context.Context) error {
+func (g *game) runControllerTurns(ctx context.Context) error {
 	for {
 		view := g.session.ViewForSeat(g.humanSeat)
-		if activeSeat(&view) != g.botSeat {
+		if view.Phase == domain.MatchPhaseComplete {
 			return nil
+		}
+		if len(g.session.DecisionContext(g.humanSeat).LegalActions) > 0 {
+			return nil
+		}
+		seat := g.nextControllerSeat(&view)
+		if seat == domain.NoSeat {
+			return fmt.Errorf("%w: %s", errNoPlayableControllerSeat, formatPhase(view.Phase))
 		}
 		turn := app.TurnContext{
 			CanConcede:      true,
-			DecisionContext: g.session.DecisionContext(g.botSeat),
+			DecisionContext: g.session.DecisionContext(seat),
 		}
 		controllerTurn := turn.Clone()
-		decision, err := g.bot.Decide(ctx, &controllerTurn)
+		decision, err := g.controllers[seat].Decide(ctx, &controllerTurn)
 		if err != nil {
 			return err
 		}
-		if err := g.session.ApplyPlayerDecision(ctx, g.botSeat, &turn, decision); err != nil {
+		if err := g.session.ApplyPlayerDecision(ctx, seat, &turn, decision); err != nil {
 			return err
 		}
-		g.out.printf("Bot: %s\n", formatPlayerDecision(decision))
+		g.out.printf("%s: %s\n", g.renderer.formatActor(seat), formatPlayerDecision(decision))
 		if err := g.out.result(); err != nil {
 			return err
 		}
 	}
+}
+
+func (g *game) nextControllerSeat(view *app.SeatView) domain.Seat {
+	if view == nil {
+		return domain.NoSeat
+	}
+	for _, seat := range pollingOrder(view) {
+		if seat == g.humanSeat || g.controllers[seat] == nil {
+			continue
+		}
+		if len(g.session.DecisionContext(seat).LegalActions) > 0 {
+			return seat
+		}
+	}
+	return domain.NoSeat
 }
 
 func formatPlayerDecision(decision app.PlayerDecision) string {
@@ -224,20 +257,34 @@ func formatPlayerDecision(decision app.PlayerDecision) string {
 	}
 }
 
-func activeSeat(view *app.SeatView) domain.Seat {
-	if view == nil {
-		return domain.NoSeat
+func pollingOrder(view *app.SeatView) []domain.Seat {
+	playerCount := len(view.HandSizes)
+	if playerCount == 0 {
+		return nil
 	}
+	start := domain.Seat(0)
 	switch view.Phase {
 	case domain.MatchPhaseAttack, domain.MatchPhaseThrowIn, domain.MatchPhaseTaking:
-		return view.Attacker
+		start = view.Attacker
 	case domain.MatchPhaseDefense:
-		return view.Defender
-	case domain.MatchPhaseComplete:
-		return domain.NoSeat
-	default:
-		return domain.NoSeat
+		start = view.Defender
 	}
+	order := make([]domain.Seat, 0, playerCount)
+	startIndex := ((int(start) % playerCount) + playerCount) % playerCount
+	for offset := range playerCount {
+		order = append(order, domain.Seat((startIndex+offset)%playerCount))
+	}
+	return order
+}
+
+func controllerSeats(controllers map[domain.Seat]app.PlayerController) []domain.Seat {
+	seats := make([]domain.Seat, 0, len(controllers))
+	for seat, controller := range controllers {
+		if controller != nil {
+			seats = append(seats, seat)
+		}
+	}
+	return seats
 }
 
 func commandError(message string) error {

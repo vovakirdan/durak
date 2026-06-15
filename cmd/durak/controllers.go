@@ -33,6 +33,17 @@ type playerControllerConfig struct {
 	AI        ai.Client
 }
 
+type playControllerOptions struct {
+	seats     int
+	humanSeat domain.Seat
+	botName   string
+	players   []string
+	seed      uint64
+	seeded    bool
+	aiConfig  *aiFlags
+	traceSink ai.RawCommandTraceSink
+}
+
 func controllerNames() string {
 	return strings.Join([]string{
 		bot.ControllerSimple,
@@ -85,6 +96,42 @@ func newPlayerController(config *playerControllerConfig) (app.PlayerController, 
 	default:
 		return nil, fmt.Errorf("%w: %q", errUnknownPlayerController, kind)
 	}
+}
+
+func playControllers(options *playControllerOptions) (map[domain.Seat]app.PlayerController, error) {
+	controllers := make(map[domain.Seat]app.PlayerController, options.seats-1)
+	defaultKind := normalizePlayerControllerKind(options.botName)
+	for seat := range options.seats {
+		domainSeat := domain.Seat(seat)
+		if domainSeat == options.humanSeat {
+			continue
+		}
+		kind := defaultKind
+		if seat < len(options.players) && options.players[seat] != "" {
+			kind = options.players[seat]
+		}
+		if err := validatePlayerControllerKind(kind); err != nil {
+			return nil, fmt.Errorf("p%d: %w", seat, err)
+		}
+		aiClient, err := options.aiConfig.clientForKind(kind)
+		if err != nil {
+			return nil, err
+		}
+		controller, err := newPlayerController(&playerControllerConfig{
+			Kind:      kind,
+			Seed:      options.seed,
+			Seeded:    options.seeded,
+			Seat:      domainSeat,
+			Fallback:  simpleFallbackController(),
+			TraceSink: options.traceSink,
+			AI:        aiClient,
+		})
+		if err != nil {
+			return nil, err
+		}
+		controllers[domainSeat] = controller
+	}
+	return controllers, nil
 }
 
 func simpleFallbackController() app.PlayerController {

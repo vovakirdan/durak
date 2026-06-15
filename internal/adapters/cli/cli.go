@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 
 	"github.com/vovakirdan/durak/internal/app"
 	"github.com/vovakirdan/durak/internal/domain"
@@ -18,17 +19,23 @@ const (
 	defaultPlayerCount = 2
 )
 
-// ErrMissingStrategy means CLI wiring did not provide a bot controller.
-var ErrMissingStrategy = errors.New("missing bot controller")
+var (
+	// ErrMissingStrategy means CLI wiring did not provide a controller.
+	ErrMissingStrategy = errors.New("missing bot controller")
+	// ErrInvalidHumanSeat means the configured local human seat is outside the table.
+	ErrInvalidHumanSeat = errors.New("invalid human seat")
+)
 
 // RunOptions configures the local CLI adapter without coupling it to concrete
 // bot or deal implementations.
 type RunOptions struct {
 	PlayerCount int
+	HumanSeat   domain.Seat
 	Profile     domain.RuleProfile
 	Deal        domain.DealOptions
 	Strategy    app.Strategy
 	Bot         app.PlayerController
+	Controllers map[domain.Seat]app.PlayerController
 	SeriesID    app.SeriesID
 	MatchID     app.MatchID
 	EventStore  app.EventStore
@@ -37,15 +44,12 @@ type RunOptions struct {
 // RunWithOptions starts the local CLI adapter.
 func RunWithOptions(ctx context.Context, in io.Reader, out io.Writer, options *RunOptions) error {
 	runOptions := normalizeRunOptions(options)
-	botController := runOptions.Bot
-	if botController == nil && runOptions.Strategy != nil {
-		botController = app.StrategyController{Strategy: runOptions.Strategy}
-	}
-	if botController == nil {
-		return ErrMissingStrategy
-	}
 	if runOptions.EventStore != nil && runOptions.MatchID == "" {
 		return app.ErrEmptyMatchID
+	}
+	controllers, err := runControllers(&runOptions)
+	if err != nil {
+		return err
 	}
 
 	runner, err := newSeriesRunner(&runOptions)
@@ -57,13 +61,42 @@ func RunWithOptions(ctx context.Context, in io.Reader, out io.Writer, options *R
 		return err
 	}
 
-	game := newGameWithController(session, botController, in, out, gameOptions{
-		humanSeat: defaultHumanSeat,
-		botSeat:   defaultBotSeat,
+	game := newGameWithControllers(session, controllers, in, out, gameOptions{
+		humanSeat: runOptions.HumanSeat,
 		startNext: runner.startMatch,
 		complete:  runner.completeMatch,
 	})
 	return game.run(ctx)
+}
+
+func runControllers(options *RunOptions) (map[domain.Seat]app.PlayerController, error) {
+	controllers := maps.Clone(options.Controllers)
+	if controllers == nil {
+		controllers = make(map[domain.Seat]app.PlayerController, options.PlayerCount-1)
+	}
+	if len(controllers) == 0 {
+		controller := options.Bot
+		if controller == nil && options.Strategy != nil {
+			controller = app.StrategyController{Strategy: options.Strategy}
+		}
+		if controller == nil {
+			return nil, ErrMissingStrategy
+		}
+		for _, seat := range canonicalSeats(options.PlayerCount) {
+			if seat != options.HumanSeat {
+				controllers[seat] = controller
+			}
+		}
+	}
+	for _, seat := range canonicalSeats(options.PlayerCount) {
+		if seat == options.HumanSeat {
+			continue
+		}
+		if controllers[seat] == nil {
+			return nil, fmt.Errorf("%w: seat %d", ErrMissingStrategy, seat)
+		}
+	}
+	return controllers, nil
 }
 
 type seriesRunner struct {
@@ -75,8 +108,8 @@ type seriesRunner struct {
 }
 
 func newSeriesRunner(options *RunOptions) (*seriesRunner, error) {
-	if options.PlayerCount != defaultPlayerCount {
-		return nil, fmt.Errorf("%w: CLI currently supports exactly %d players", app.ErrInvalidSeries, defaultPlayerCount)
+	if options.HumanSeat < 0 || int(options.HumanSeat) >= options.PlayerCount {
+		return nil, fmt.Errorf("%w: got %d, allowed 0..%d", ErrInvalidHumanSeat, options.HumanSeat, options.PlayerCount-1)
 	}
 	seriesID := options.SeriesID
 	if seriesID == "" {
@@ -84,7 +117,7 @@ func newSeriesRunner(options *RunOptions) (*seriesRunner, error) {
 	}
 	series, err := app.NewSeries(&app.SeriesOptions{
 		SeriesID: seriesID,
-		Seats:    []domain.Seat{defaultHumanSeat, defaultBotSeat},
+		Seats:    canonicalSeats(options.PlayerCount),
 		Profile:  options.Profile,
 	})
 	if err != nil {
@@ -96,6 +129,14 @@ func newSeriesRunner(options *RunOptions) (*seriesRunner, error) {
 		eventStore:  options.EventStore,
 		baseMatchID: options.MatchID,
 	}, nil
+}
+
+func canonicalSeats(count int) []domain.Seat {
+	seats := make([]domain.Seat, count)
+	for seat := range seats {
+		seats[seat] = domain.Seat(seat)
+	}
+	return seats
 }
 
 func (r *seriesRunner) startMatch(ctx context.Context) (*app.Session, error) {

@@ -9,14 +9,18 @@ import (
 )
 
 type renderer struct {
-	humanSeat domain.Seat
-	botSeat   domain.Seat
+	humanSeat       domain.Seat
+	controllerSeats map[domain.Seat]bool
 }
 
-func newRenderer(humanSeat, botSeat domain.Seat) renderer {
+func newRenderer(humanSeat domain.Seat, controllerSeats []domain.Seat) renderer {
+	controllers := make(map[domain.Seat]bool, len(controllerSeats))
+	for _, seat := range controllerSeats {
+		controllers[seat] = true
+	}
 	return renderer{
-		humanSeat: humanSeat,
-		botSeat:   botSeat,
+		humanSeat:       humanSeat,
+		controllerSeats: controllers,
 	}
 }
 
@@ -104,10 +108,24 @@ func (r renderer) formatSeat(seat domain.Seat) string {
 	switch seat {
 	case r.humanSeat:
 		return fmt.Sprintf("you(%d)", seat)
-	case r.botSeat:
-		return fmt.Sprintf("bot(%d)", seat)
 	default:
+		if r.controllerSeats[seat] {
+			return fmt.Sprintf("bot(%d)", seat)
+		}
 		return fmt.Sprintf("seat(%d)", seat)
+	}
+}
+
+func (r renderer) formatActor(seat domain.Seat) string {
+	switch {
+	case seat == r.humanSeat:
+		return "You"
+	case r.controllerSeats[seat] && len(r.controllerSeats) == 1:
+		return "Bot"
+	case r.controllerSeats[seat]:
+		return fmt.Sprintf("Seat %d", seat)
+	default:
+		return fmt.Sprintf("Seat %d", seat)
 	}
 }
 

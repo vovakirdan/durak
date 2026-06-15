@@ -16,8 +16,9 @@ Implemented core pieces:
   completion.
 - Application session layer, event replay/history projection foundation, and a
   simple controller registry for deterministic and random bots.
-- Two-seat interactive CLI commands by action number or short commands, with
-  consecutive matches in one local series.
+- Interactive CLI commands by action number or short commands, with one local
+  human seat, controller-driven seats up to 6 players, and consecutive matches
+  in one local series.
 
 CLI commands:
 
@@ -50,12 +51,23 @@ Run a replayable CLI deal with:
 go run ./cmd/durak -seed 42 -bot simple -rules default
 ```
 
+Run an interactive multi-seat CLI game with one local human and controller
+seats:
+
+```sh
+go run ./cmd/durak -seed 42 -seats 4 -human-seat 0 \
+  -bot simple -p2 random -p3 ai-raw-mock
+```
+
 Available player controllers for the opponent are `simple`, `random`,
 `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The AI mock is a deterministic
 local tester that returns raw text commands through the shared parser.
 `ai-openai` calls an OpenAI-compatible `/chat/completions` endpoint directly
 through the official Go SDK. `ai-raw-exec` is still available for local wrapper
-experiments. The only rule preset currently exposed through CLI flags is
+experiments. In interactive play, `-bot` sets the default controller for every
+non-human seat and `-p0` through `-p5` override specific seats. The local human
+seat is selected with `-human-seat`; only one local human is supported until the
+TUI/SSH table surfaces exist. The only rule preset currently exposed through CLI flags is
 `default`; external rule config is also a future milestone.
 
 Run against an OpenAI-compatible endpoint with:

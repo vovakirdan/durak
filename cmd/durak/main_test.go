@@ -339,6 +339,58 @@ func TestRunPlayAcceptsBotAndRuleFlags(t *testing.T) {
 	}
 }
 
+func TestRunPlayAcceptsThreeSeatFlags(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{
+		"-seed", "42",
+		"-seats", "3",
+		"-human-seat", "0",
+		"-bot", "simple",
+		"-p2", "random",
+	}, strings.NewReader("q\n"), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run play returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"Durak CLI",
+		"Hands: you(0):6 bot(1):6 bot(2):6",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestRunPlayRejectsInvalidHumanSeat(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{"-seats", "3", "-human-seat", "3"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run play returned nil error, want invalid human seat")
+	}
+	if !strings.Contains(err.Error(), "human-seat must be in range 0..2") {
+		t.Fatalf("error = %v, want human-seat range error", err)
+	}
+}
+
+func TestRunPlayRejectsUnknownSeatController(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{"-seats", "3", "-p2", "unknown"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run play returned nil error, want invalid seat controller")
+	}
+	if !strings.Contains(err.Error(), `p2: unknown player controller: "unknown"`) {
+		t.Fatalf("error = %v, want unknown p2 controller error", err)
+	}
+}
+
 func TestRunPlayAcceptsRawExecAIController(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
