@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 
 	"github.com/vovakirdan/durak/internal/adapters/ai"
@@ -25,8 +26,8 @@ type arenaOptions struct {
 	maxActions   int
 	eventLogPath string
 	baseMatchID  string
-	player0      string
-	player1      string
+	seats        int
+	players      []string
 	rules        string
 	aiConfig     aiFlags
 }
@@ -64,8 +65,8 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 		matches:    defaultArenaMatches,
 		seed:       defaultArenaSeed,
 		maxActions: defaultArenaMaxActions,
-		player0:    normalizePlayerControllerKind(""),
-		player1:    normalizePlayerControllerKind(""),
+		seats:      2,
+		players:    defaultArenaPlayers(),
 		rules:      defaultRulesPreset,
 		aiConfig:   newAIFlags(),
 	}
@@ -76,8 +77,11 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	flags.IntVar(&options.maxActions, "max-actions", options.maxActions, "maximum accepted actions per match")
 	flags.StringVar(&options.eventLogPath, "event-log", "", "append public arena events to a JSONL file")
 	flags.StringVar(&options.baseMatchID, "match-id", "", "base match id for event log")
-	flags.StringVar(&options.player0, "p0", options.player0, "seat 0 controller: "+controllerNames())
-	flags.StringVar(&options.player1, "p1", options.player1, "seat 1 controller: "+controllerNames())
+	flags.IntVar(&options.seats, "seats", options.seats, "number of active seats")
+	for seat := range options.players {
+		flags.StringVar(&options.players[seat], fmt.Sprintf("p%d", seat), options.players[seat],
+			fmt.Sprintf("seat %d controller: %s", seat, controllerNames()))
+	}
 	flags.StringVar(&options.rules, "rules", options.rules, "rule preset: default")
 	options.aiConfig.bind(flags)
 	if err := flags.Parse(args); err != nil {
@@ -92,14 +96,17 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	if options.maxActions <= 0 {
 		return arenaOptions{}, fmt.Errorf("max-actions must be positive")
 	}
-	if err := validatePlayerControllerKind(options.player0); err != nil {
-		return arenaOptions{}, fmt.Errorf("p0: %w", err)
-	}
-	if err := validatePlayerControllerKind(options.player1); err != nil {
-		return arenaOptions{}, fmt.Errorf("p1: %w", err)
-	}
-	if _, err := ruleProfile(options.rules); err != nil {
+	profile, err := ruleProfile(options.rules)
+	if err != nil {
 		return arenaOptions{}, err
+	}
+	if options.seats < 2 || options.seats > profile.MaxPlayers {
+		return arenaOptions{}, fmt.Errorf("seats must be in range 2..%d", profile.MaxPlayers)
+	}
+	for seat := range options.seats {
+		if err := validatePlayerControllerKind(options.players[seat]); err != nil {
+			return arenaOptions{}, fmt.Errorf("p%d: %w", seat, err)
+		}
 	}
 	return options, nil
 }
@@ -113,9 +120,10 @@ func runArenaMatches(
 	if err != nil {
 		return app.SeriesRunResult{}, err
 	}
+	seats := arenaSeats(options.seats)
 	series, err := app.NewSeries(&app.SeriesOptions{
 		SeriesID: "arena-series",
-		Seats:    []domain.Seat{0, 1},
+		Seats:    seats,
 		Profile:  profile,
 	})
 	if err != nil {
@@ -130,44 +138,31 @@ func runArenaMatches(
 		}
 		eventStore = store
 	}
-	player0AI, err := options.aiConfig.clientForKind(options.player0)
-	if err != nil {
-		return app.SeriesRunResult{}, err
-	}
-	player1AI, err := options.aiConfig.clientForKind(options.player1)
-	if err != nil {
-		return app.SeriesRunResult{}, err
-	}
 
-	player0, err := newPlayerController(&playerControllerConfig{
-		Kind:      options.player0,
-		Seed:      options.seed,
-		Seeded:    true,
-		Seat:      domain.Seat(0),
-		TraceSink: rawAITraceSink,
-		AI:        player0AI,
-	})
-	if err != nil {
-		return app.SeriesRunResult{}, err
-	}
-	player1, err := newPlayerController(&playerControllerConfig{
-		Kind:      options.player1,
-		Seed:      options.seed,
-		Seeded:    true,
-		Seat:      domain.Seat(1),
-		TraceSink: rawAITraceSink,
-		AI:        player1AI,
-	})
-	if err != nil {
-		return app.SeriesRunResult{}, err
+	controllers := make(map[domain.Seat]app.PlayerController, len(seats))
+	for _, seat := range seats {
+		kind := options.players[int(seat)]
+		aiClient, clientErr := options.aiConfig.clientForKind(kind)
+		if clientErr != nil {
+			return app.SeriesRunResult{}, clientErr
+		}
+		controller, controllerErr := newPlayerController(&playerControllerConfig{
+			Kind:      kind,
+			Seed:      options.seed,
+			Seeded:    true,
+			Seat:      seat,
+			TraceSink: rawAITraceSink,
+			AI:        aiClient,
+		})
+		if controllerErr != nil {
+			return app.SeriesRunResult{}, controllerErr
+		}
+		controllers[seat] = controller
 	}
 
 	runner, err := app.NewSeriesRunner(&app.SeriesRunnerOptions{
-		Series: series,
-		Controllers: map[domain.Seat]app.PlayerController{
-			domain.Seat(0): player0,
-			domain.Seat(1): player1,
-		},
+		Series:             series,
+		Controllers:        controllers,
 		Deal:               domain.SeededDealOptions(options.seed),
 		EventStore:         eventStore,
 		BaseMatchID:        app.MatchID(options.baseMatchID),
@@ -200,16 +195,17 @@ func summarizeArena(result app.SeriesRunResult, rawAI arenaRawAISummary) arenaSu
 func writeArenaSummary(out io.Writer, options *arenaOptions, summary arenaSummary) error {
 	_, err := fmt.Fprintf(
 		out,
-		"Arena: seat0=%s seat1=%s\nRules: %s\nMatches: %d\nSeed: %d\nMax actions/match: %d\nTurns: %d\nResults: seat0=%d seat1=%d draws=%d\n",
-		options.player0,
-		options.player1,
+		"Arena: seat0=%s seat1=%s seats=%d players=%s\nRules: %s\nMatches: %d\nSeed: %d\nMax actions/match: %d\nTurns: %d\nResults: %s draws=%d\n",
+		options.players[0],
+		options.players[1],
+		options.seats,
+		formatArenaPlayers(options),
 		options.rules,
 		summary.matches,
 		options.seed,
 		options.maxActions,
 		summary.turns,
-		summary.wins[domain.Seat(0)],
-		summary.wins[domain.Seat(1)],
+		formatArenaResults(summary, options.seats),
 		summary.draws,
 	)
 	if err != nil {
@@ -225,6 +221,40 @@ func writeArenaSummary(out io.Writer, options *arenaOptions, summary arenaSummar
 		summary.rawAIInvalid,
 	)
 	return err
+}
+
+func defaultArenaPlayers() []string {
+	maxPlayers := domain.DefaultRuleProfile().MaxPlayers
+	players := make([]string, maxPlayers)
+	for seat := range players {
+		players[seat] = normalizePlayerControllerKind("")
+	}
+	return players
+}
+
+func arenaSeats(count int) []domain.Seat {
+	seats := make([]domain.Seat, count)
+	for seat := range seats {
+		seats[seat] = domain.Seat(seat)
+	}
+	return seats
+}
+
+func formatArenaPlayers(options *arenaOptions) string {
+	parts := make([]string, 0, options.seats)
+	for seat := range options.seats {
+		parts = append(parts, fmt.Sprintf("%d:%s", seat, options.players[seat]))
+	}
+	return "[" + strings.Join(parts, ",") + "]"
+}
+
+func formatArenaResults(summary arenaSummary, seats int) string {
+	parts := make([]string, 0, seats)
+	for seat := range seats {
+		domainSeat := domain.Seat(seat)
+		parts = append(parts, fmt.Sprintf("seat%d=%d", seat, summary.wins[domainSeat]))
+	}
+	return strings.Join(parts, " ")
 }
 
 type arenaRawAIStats struct {

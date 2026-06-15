@@ -229,8 +229,34 @@ func TestSeededDealOptionsRepeatsDeal(t *testing.T) {
 	}
 }
 
+func TestDealInitialAllowsSixPlayersWithEmptyStock(t *testing.T) {
+	profile := DefaultRuleProfile()
+	deck := NewDeck36()
+	moveCardToBottom(deck, Card{Rank: Nine, Suit: Hearts})
+
+	deal, err := DealInitial(6, profile, DealOptions{Shuffler: copyDeck(deck)})
+	if err != nil {
+		t.Fatalf("DealInitial returned error: %v", err)
+	}
+
+	if len(deal.Hands) != 6 {
+		t.Fatalf("hands = %d, want 6", len(deal.Hands))
+	}
+	for seat, hand := range deal.Hands {
+		if len(hand) != 6 {
+			t.Fatalf("hand %d has %d cards, want 6", seat, len(hand))
+		}
+	}
+	if len(deal.Stock) != 0 {
+		t.Fatalf("stock = %v, want empty", deal.Stock)
+	}
+	if deal.TrumpIndicator != (Card{Rank: Nine, Suit: Hearts}) {
+		t.Fatalf("TrumpIndicator = %v, want 9H", deal.TrumpIndicator)
+	}
+}
+
 func TestDealInitialRejectsUnsupportedPlayerCount(t *testing.T) {
-	_, err := DealInitial(6, DefaultRuleProfile(), DealOptions{})
+	_, err := DealInitial(7, DefaultRuleProfile(), DealOptions{})
 	if !errors.Is(err, ErrInvalidPlayerCount) {
 		t.Fatalf("DealInitial error = %v, want ErrInvalidPlayerCount", err)
 	}

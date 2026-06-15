@@ -68,6 +68,9 @@ func (m *Match) validateTransfer(seat Seat, card Card) error {
 	if !m.canAddSuccessfulDefenseAttack() {
 		return fmt.Errorf("%w: first successful defense attack limit is %d", ErrAttackLimitReached, m.firstSuccessfulDefenseLimit())
 	}
+	if _, ok := m.nextActiveSeatAfter(seat); !ok {
+		return fmt.Errorf("%w: no next active defender", ErrTransferNotAllowed)
+	}
 	return nil
 }
 

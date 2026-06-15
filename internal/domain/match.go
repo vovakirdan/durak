@@ -76,6 +76,7 @@ type TablePair struct {
 type Match struct {
 	profile            RuleProfile
 	hands              [][]Card
+	activeSeats        []bool
 	stock              []Card
 	discard            []Card
 	trumpSuit          Suit
@@ -101,6 +102,7 @@ func NewMatch(deal *InitialDeal, profile RuleProfile) (*Match, error) {
 	match := &Match{
 		profile:        profile,
 		hands:          cloneHands(deal.Hands),
+		activeSeats:    newActiveSeats(len(deal.Hands)),
 		stock:          slices.Clone(deal.Stock),
 		trumpSuit:      deal.TrumpSuit,
 		trumpIndicator: deal.TrumpIndicator,
@@ -120,8 +122,8 @@ func validateMatchInput(deal *InitialDeal, profile RuleProfile) error {
 	if deal == nil {
 		return fmt.Errorf("%w: initial deal is nil", ErrInvalidMatch)
 	}
-	if len(deal.Hands) != 2 {
-		return fmt.Errorf("%w: match state machine currently supports 2 players", ErrInvalidPlayerCount)
+	if len(deal.Hands) < 2 {
+		return fmt.Errorf("%w: got %d, allowed 2..%d", ErrInvalidPlayerCount, len(deal.Hands), profile.MaxPlayers)
 	}
 	if len(deal.Hands) > profile.MaxPlayers {
 		return fmt.Errorf("%w: got %d, allowed up to %d", ErrInvalidPlayerCount, len(deal.Hands), profile.MaxPlayers)
@@ -241,6 +243,81 @@ func (m *Match) validSeat(seat Seat) bool {
 	return seat >= 0 && int(seat) < len(m.hands)
 }
 
+func (m *Match) activeSeat(seat Seat) bool {
+	if !m.validSeat(seat) {
+		return false
+	}
+	return m.activeSeats[int(seat)]
+}
+
+func (m *Match) activeSeatFrom(start Seat) (Seat, bool) {
+	if len(m.hands) == 0 {
+		return NoSeat, false
+	}
+	playerCount := len(m.hands)
+	startIndex := ((int(start) % playerCount) + playerCount) % playerCount
+	for offset := range playerCount {
+		seat := Seat((startIndex + offset) % playerCount)
+		if m.activeSeat(seat) {
+			return seat, true
+		}
+	}
+	return NoSeat, false
+}
+
+func (m *Match) nextActiveSeatAfter(seat Seat) (Seat, bool) {
+	if len(m.hands) < 2 {
+		return NoSeat, false
+	}
+	playerCount := len(m.hands)
+	startIndex := ((int(seat) % playerCount) + playerCount) % playerCount
+	for offset := 1; offset < playerCount; offset++ {
+		candidate := Seat((startIndex + offset) % playerCount)
+		if m.activeSeat(candidate) {
+			return candidate, true
+		}
+	}
+	return NoSeat, false
+}
+
+func (m *Match) setNextRolesFrom(start Seat) {
+	attacker, ok := m.activeSeatFrom(start)
+	if !ok {
+		m.attacker = NoSeat
+		m.defender = NoSeat
+		return
+	}
+	defender, ok := m.nextActiveSeatAfter(attacker)
+	if !ok {
+		m.attacker = attacker
+		m.defender = NoSeat
+		return
+	}
+	m.attacker = attacker
+	m.defender = defender
+}
+
+func (m *Match) setNextRolesAfter(seat Seat) {
+	m.setNextRolesFrom(nextSeat(seat, len(m.hands)))
+}
+
+func (m *Match) firstEmptySeat() Seat {
+	for seat, hand := range m.hands {
+		if len(hand) == 0 {
+			return Seat(seat)
+		}
+	}
+	return NoSeat
+}
+
+func newActiveSeats(playerCount int) []bool {
+	active := make([]bool, playerCount)
+	for seat := range active {
+		active[seat] = true
+	}
+	return active
+}
+
 func (m *Match) requireInProgress() error {
 	if m.phase == MatchPhaseComplete {
 		return ErrMatchComplete
@@ -249,29 +326,42 @@ func (m *Match) requireInProgress() error {
 }
 
 func (m *Match) updateCompletion() {
+	if m.completeIfFinished() {
+		m.appendMatchEndedEvent()
+	}
+}
+
+func (m *Match) completeIfFinished() bool {
 	if len(m.stock) > 0 || len(m.table) > 0 {
-		return
+		return false
 	}
 
-	emptySeats := make([]Seat, 0, len(m.hands))
-	nonEmptySeats := make([]Seat, 0, len(m.hands))
+	activeSeats := make([]Seat, 0, len(m.hands))
 	for seat, hand := range m.hands {
-		if len(hand) == 0 {
-			emptySeats = append(emptySeats, Seat(seat))
+		if !m.activeSeats[seat] {
 			continue
 		}
-		nonEmptySeats = append(nonEmptySeats, Seat(seat))
+		if len(hand) == 0 {
+			m.activeSeats[seat] = false
+			continue
+		}
+		activeSeats = append(activeSeats, Seat(seat))
 	}
-	if len(emptySeats) == 0 {
-		return
+	if len(activeSeats) > 1 {
+		return false
 	}
 
 	m.phase = MatchPhaseComplete
-	if len(nonEmptySeats) == 1 {
-		m.winner = emptySeats[0]
-		m.loser = nonEmptySeats[0]
+	m.attacker = NoSeat
+	m.defender = NoSeat
+	if len(activeSeats) == 0 {
+		m.winner = NoSeat
+		m.loser = NoSeat
+	} else {
+		m.winner = m.firstEmptySeat()
+		m.loser = activeSeats[0]
 	}
-	m.appendMatchEndedEvent()
+	return true
 }
 
 // Concede completes a match when a seat chooses to give up.
@@ -284,7 +374,11 @@ func (m *Match) Concede(seat Seat) error {
 	}
 
 	m.loser = seat
-	m.winner = nextSeat(seat, len(m.hands))
+	if winner, ok := m.nextActiveSeatAfter(seat); ok {
+		m.winner = winner
+	} else {
+		m.winner = nextSeat(seat, len(m.hands))
+	}
 	m.phase = MatchPhaseComplete
 	m.appendEvent(Event{
 		Kind: EventKindConcede,

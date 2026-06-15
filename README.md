@@ -11,12 +11,12 @@ plain text and intentionally small; it is a stepping stone before a richer TUI.
 Implemented core pieces:
 
 - 36-card deck, initial deal, trump selection, and first-attacker selection.
-- Two-player match state machine with attack, defense, throw-in, transfer, take,
-  refill, and match completion.
+- Match state machine for 2..6 seats with attack, defense, throw-in, transfer,
+  take, refill, active-seat skipping, and match completion.
 - Application session layer, event replay/history projection foundation, and a
   simple controller registry for deterministic and random bots.
-- CLI commands by action number or short commands, with consecutive matches in
-  one local series.
+- Two-seat interactive CLI commands by action number or short commands, with
+  consecutive matches in one local series.
 
 CLI commands:
 
@@ -115,14 +115,22 @@ Run a headless arena smoke with:
 go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500 -p0 simple -p1 random
 ```
 
+Run a multi-seat arena smoke with:
+
+```sh
+go run ./cmd/durak arena -matches 100 -seats 4 -seed 42 \
+  -p0 simple -p1 random -p2 random -p3 ai-raw-mock
+```
+
 Arena mode is a development tool for match stability checks. It runs
 controllers through the application headless runner and can write public events
 with `-event-log` and `-match-id`. Available controllers are `simple`,
 `random`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`; `random` chooses
 uniformly from legal actions and does not evaluate the position, while
 `ai-raw-mock` intentionally exercises raw command parsing and then retries with
-legal text commands. Arena uses `-rules default` unless another supported
-preset is provided later.
+legal text commands. Arena supports `-seats 2..6` and controller flags
+`-p0` through `-p5`; omitted seats use `simple`. Arena uses `-rules default`
+unless another supported preset is provided later.
 
 Arena can also append private AI decision traces with `-ai-trace-log`, which is
 useful for long-running AI-vs-AI sessions that will be analyzed after the run.

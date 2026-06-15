@@ -110,10 +110,73 @@ func TestSeriesClearsPreviousLoserWhenMatchHasNoLoser(t *testing.T) {
 	}
 }
 
+func TestSeriesSupportsThreeSeats(t *testing.T) {
+	series, err := app.NewSeries(&app.SeriesOptions{
+		SeriesID: "series-1",
+		Seats:    []domain.Seat{0, 1, 2},
+	})
+	if err != nil {
+		t.Fatalf("NewSeries returned error: %v", err)
+	}
+	if !slices.Equal(series.Seats(), []domain.Seat{0, 1, 2}) {
+		t.Fatalf("series seats = %v, want [0 1 2]", series.Seats())
+	}
+}
+
+func TestThreeSeatSeriesStartsNextMatchBeforePreviousLoser(t *testing.T) {
+	ctx := context.Background()
+	series, err := app.NewSeries(&app.SeriesOptions{
+		SeriesID: "series-1",
+		Seats:    []domain.Seat{0, 1, 2},
+	})
+	if err != nil {
+		t.Fatalf("NewSeries returned error: %v", err)
+	}
+	first, _, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+		MatchID: "match-1",
+		Deal:    domain.SeededDealOptions(42),
+	})
+	if err != nil {
+		t.Fatalf("StartMatch first returned error: %v", err)
+	}
+	if concedeErr := first.Concede(ctx, domain.Seat(0)); concedeErr != nil {
+		t.Fatalf("Concede returned error: %v", concedeErr)
+	}
+	if completeErr := series.CompleteMatch(first); completeErr != nil {
+		t.Fatalf("CompleteMatch returned error: %v", completeErr)
+	}
+
+	second, deal, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+		MatchID: "match-2",
+		Deal:    domain.SeededDealOptions(43),
+	})
+	if err != nil {
+		t.Fatalf("StartMatch second returned error: %v", err)
+	}
+
+	if deal.FirstAttacker != 2 {
+		t.Fatalf("second first attacker = %d, want seat before previous loser 2", deal.FirstAttacker)
+	}
+	view := second.ViewForSeat(domain.Seat(0))
+	if view.Attacker != domain.Seat(2) || view.Defender != domain.Seat(0) {
+		t.Fatalf("roles = %d/%d, want attacker 2 defender 0", view.Attacker, view.Defender)
+	}
+}
+
 func TestSeriesRejectsUnsupportedSeatCount(t *testing.T) {
 	_, err := app.NewSeries(&app.SeriesOptions{
 		SeriesID: "series-1",
-		Seats:    []domain.Seat{0, 1, 2},
+		Seats:    []domain.Seat{0, 1, 2, 3, 4, 5, 6},
+	})
+	if !errors.Is(err, app.ErrInvalidSeries) {
+		t.Fatalf("NewSeries error = %v, want ErrInvalidSeries", err)
+	}
+}
+
+func TestSeriesRejectsNonCanonicalSeats(t *testing.T) {
+	_, err := app.NewSeries(&app.SeriesOptions{
+		SeriesID: "series-1",
+		Seats:    []domain.Seat{1, 0},
 	})
 	if !errors.Is(err, app.ErrInvalidSeries) {
 		t.Fatalf("NewSeries error = %v, want ErrInvalidSeries", err)

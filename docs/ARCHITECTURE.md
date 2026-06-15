@@ -180,7 +180,7 @@
   - Future internal events may include additional hidden state such as explicit draw cards, seeds, or decision context when needed for faster reconstruction or model training.
   - Snapshots are derived checkpoints for faster resume/replay; they are not the source of truth.
   - Projections/read models are derived tables for statistics, scoring, ratings, and global analytics; they must be rebuildable from event streams.
-  - Match-history projections must model participants as `seats[]` plus seat-based fields (`winner`, `loser`, `first_attacker`, `defender`, `hand_sizes[]`) rather than `player1`/`player2` columns, even while the active engine supports only two seats.
+  - Match-history projections must model participants as `seats[]` plus seat-based fields (`winner`, `loser`, `first_attacker`, `defender`, `hand_sizes[]`) rather than `player1`/`player2` columns.
 - **Match and series boundaries:**
   - A match is self-contained: rules, seats, initial deal, actions, and outcome must be enough to replay/analyze that match without reading a previous match.
   - A series/table session links optional consecutive matches through `series_id`, stable `seat_order`, match ids, completed match results, and previous loser metadata.
@@ -356,7 +356,7 @@ provider integration.
 - The local CLI can run without storage; optional JSONL event export is a local history/debugging adapter, not daemon persistence.
 - Rule configurability is represented in code first and externalized later.
 - Active match state is in memory until persistence begins.
-- The target architecture must support more than two seats even if the first implementation runs two seats only.
+- The domain and headless runner support 2..6 canonical seats; the interactive CLI remains a two-seat surface until the TUI/table UX is ready.
 - Match event design should anticipate replay, statistics, and AI training.
 - Raw AI command testing is a QA/stability tool first; provider-backed structured AI players are a later integration layer.
 

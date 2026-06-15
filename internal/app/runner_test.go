@@ -69,6 +69,27 @@ func TestSeriesRunnerPlaysConsecutiveMatches(t *testing.T) {
 	}
 }
 
+func TestSeriesRunnerPlaysThreeSeatMatch(t *testing.T) {
+	series := mustRunnerSeriesWithSeats(t, []domain.Seat{0, 1, 2})
+	runner := mustRunner(t, app.SeriesRunnerOptions{
+		Series:      series,
+		Controllers: concedeControllersForSeats(series.Seats()),
+		Deal:        domain.SeededDealOptions(42),
+	})
+
+	result, err := runner.Run(context.Background(), 1)
+	if err != nil {
+		t.Fatalf("Run returned error: %v", err)
+	}
+
+	if len(result.Matches) != 1 || result.Matches[0].Loser == domain.NoSeat {
+		t.Fatalf("matches = %+v, want one decided match", result.Matches)
+	}
+	if len(result.Turns) != 1 || result.Turns[0].Seat < 0 || result.Turns[0].Seat > 2 {
+		t.Fatalf("turns = %+v, want one three-seat concession", result.Turns)
+	}
+}
+
 func TestSeriesRunnerStopsAtActionLimit(t *testing.T) {
 	hands := runnerHands()
 	runner := mustRunner(t, app.SeriesRunnerOptions{
@@ -141,9 +162,14 @@ func mustRunner(t *testing.T, options app.SeriesRunnerOptions) *app.SeriesRunner
 
 func mustRunnerSeries(t *testing.T) *app.Series {
 	t.Helper()
+	return mustRunnerSeriesWithSeats(t, []domain.Seat{0, 1})
+}
+
+func mustRunnerSeriesWithSeats(t *testing.T, seats []domain.Seat) *app.Series {
+	t.Helper()
 	series, err := app.NewSeries(&app.SeriesOptions{
 		SeriesID: "runner-series",
-		Seats:    []domain.Seat{0, 1},
+		Seats:    seats,
 	})
 	if err != nil {
 		t.Fatalf("NewSeries returned error: %v", err)
@@ -152,14 +178,17 @@ func mustRunnerSeries(t *testing.T) *app.Series {
 }
 
 func concedeControllers() map[domain.Seat]app.PlayerController {
-	return map[domain.Seat]app.PlayerController{
-		domain.Seat(0): controllerFunc(func(context.Context, *app.TurnContext) (app.PlayerDecision, error) {
+	return concedeControllersForSeats([]domain.Seat{0, 1})
+}
+
+func concedeControllersForSeats(seats []domain.Seat) map[domain.Seat]app.PlayerController {
+	controllers := make(map[domain.Seat]app.PlayerController, len(seats))
+	for _, seat := range seats {
+		controllers[seat] = controllerFunc(func(context.Context, *app.TurnContext) (app.PlayerDecision, error) {
 			return app.ConcedeDecision(), nil
-		}),
-		domain.Seat(1): controllerFunc(func(context.Context, *app.TurnContext) (app.PlayerDecision, error) {
-			return app.ConcedeDecision(), nil
-		}),
+		})
 	}
+	return controllers
 }
 
 func firstLegalControllers() map[domain.Seat]app.PlayerController {

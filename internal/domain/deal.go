@@ -70,9 +70,18 @@ func DealInitial(playerCount int, profile RuleProfile, opts DealOptions) (Initia
 			continue
 		}
 
-		trump, reselections, err := selectTrumpIndicator(stock, profile, shuffler)
-		if err != nil {
-			return InitialDeal{}, err
+		reselections := 0
+		trump := lastDealtCard(hands)
+		if len(stock) > 0 {
+			selected, selectedReshuffles, err := selectTrumpIndicator(stock, profile, shuffler)
+			if err != nil {
+				return InitialDeal{}, err
+			}
+			trump = selected
+			reselections = selectedReshuffles
+		}
+		if trump.Rank == profile.TrumpIndicatorForbiddenRank {
+			continue
 		}
 
 		firstAttacker, random := selectFirstAttacker(hands, trump.Suit, opts.Choose)
@@ -95,9 +104,9 @@ func validateDealInput(playerCount int, profile RuleProfile) error {
 	if playerCount < 2 || playerCount > profile.MaxPlayers {
 		return fmt.Errorf("%w: got %d, allowed 2..%d", ErrInvalidPlayerCount, playerCount, profile.MaxPlayers)
 	}
-	requiredCards := playerCount*profile.InitialHandSize + 1
+	requiredCards := playerCount * profile.InitialHandSize
 	if requiredCards > len(NewDeck36()) {
-		return fmt.Errorf("%w: %d players need %d cards including trump indicator", ErrInvalidPlayerCount, playerCount, requiredCards)
+		return fmt.Errorf("%w: %d players need %d cards", ErrInvalidPlayerCount, playerCount, requiredCards)
 	}
 	return nil
 }
@@ -122,6 +131,17 @@ func dealHands(deck []Card, playerCount, handSize int) (hands [][]Card, stock []
 
 	stockStart := playerCount * handSize
 	return hands, slices.Clone(deck[stockStart:])
+}
+
+func lastDealtCard(hands [][]Card) Card {
+	if len(hands) == 0 {
+		return Card{}
+	}
+	lastHand := hands[len(hands)-1]
+	if len(lastHand) == 0 {
+		return Card{}
+	}
+	return lastHand[len(lastHand)-1]
 }
 
 func hasRedealHand(hands [][]Card, threshold int) bool {

@@ -57,6 +57,38 @@ func TestRunArenaCompletesMatches(t *testing.T) {
 	}
 }
 
+func TestRunArenaCompletesThreeSeatMatches(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(t.Context(), []string{
+		"arena",
+		"-matches", "3",
+		"-seats", "3",
+		"-seed", "42",
+		"-max-actions", "1000",
+		"-p0", "simple",
+		"-p1", "random",
+		"-p2", "random",
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run arena returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"Arena: seat0=simple seat1=random seats=3",
+		"players=[0:simple,1:random,2:random]",
+		"Matches: 3",
+		"Results: seat0=",
+		"seat2=",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
 func TestRunArenaAcceptsRawAIController(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
@@ -260,6 +292,19 @@ func TestRunArenaRejectsInvalidMatches(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "matches must be positive") {
 		t.Fatalf("error = %v, want positive matches error", err)
+	}
+}
+
+func TestRunArenaRejectsInvalidSeats(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{"arena", "-seats", "7"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run arena returned nil error, want invalid seats")
+	}
+	if !strings.Contains(err.Error(), "seats must be in range 2..6") {
+		t.Fatalf("error = %v, want seats range error", err)
 	}
 }
 

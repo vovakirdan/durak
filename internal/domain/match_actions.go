@@ -87,7 +87,10 @@ func (m *Match) Transfer(seat Seat, card Card) error {
 	if err := m.addAttackCard(seat, card); err != nil {
 		return err
 	}
-	m.attacker, m.defender = m.defender, m.attacker
+	if nextDefender, ok := m.nextActiveSeatAfter(seat); ok {
+		m.attacker = seat
+		m.defender = nextDefender
+	}
 	m.appendActionEvent(EventKindTransfer, Action{Kind: ActionKindTransfer, Seat: seat, Card: card})
 	return nil
 }
@@ -116,11 +119,15 @@ func (m *Match) FinishDefense(seat Seat) error {
 	oldAttacker := m.attacker
 	oldDefender := m.defender
 	m.refill(oldAttacker, oldDefender)
-	m.attacker = oldDefender
-	m.defender = nextSeat(m.attacker, len(m.hands))
-	m.phase = MatchPhaseAttack
+	completed := m.completeIfFinished()
+	if !completed {
+		m.setNextRolesFrom(oldDefender)
+		m.phase = MatchPhaseAttack
+	}
 	m.appendRoundEndedEvent(RoundOutcomeDefense, oldAttacker, oldDefender, cards)
-	m.updateCompletion()
+	if completed {
+		m.appendMatchEndedEvent()
+	}
 	return nil
 }
 
@@ -161,11 +168,15 @@ func (m *Match) FinishTake(seat Seat) error {
 	oldAttacker := m.attacker
 	oldDefender := m.defender
 	m.refill(oldAttacker, oldDefender)
-	m.attacker = nextSeat(oldDefender, len(m.hands))
-	m.defender = nextSeat(m.attacker, len(m.hands))
-	m.phase = MatchPhaseAttack
+	completed := m.completeIfFinished()
+	if !completed {
+		m.setNextRolesAfter(oldDefender)
+		m.phase = MatchPhaseAttack
+	}
 	m.appendRoundEndedEvent(RoundOutcomeTake, oldAttacker, oldDefender, cards)
-	m.updateCompletion()
+	if completed {
+		m.appendMatchEndedEvent()
+	}
 	return nil
 }
 

@@ -48,8 +48,7 @@ type Series struct {
 	hasPreviousLoser bool
 }
 
-// NewSeries creates an in-memory series. The domain engine currently supports
-// two active seats, so wider tables are represented later at this boundary.
+// NewSeries creates an in-memory series with canonical seats 0..n-1.
 func NewSeries(options *SeriesOptions) (*Series, error) {
 	if options == nil {
 		return nil, fmt.Errorf("%w: options are nil", ErrInvalidSeries)
@@ -57,16 +56,16 @@ func NewSeries(options *SeriesOptions) (*Series, error) {
 	if options.SeriesID == "" {
 		return nil, fmt.Errorf("%w: series id is empty", ErrInvalidSeries)
 	}
+	profile := options.Profile
+	if profile == (domain.RuleProfile{}) {
+		profile = domain.DefaultRuleProfile()
+	}
 	seats := options.Seats
 	if len(seats) == 0 {
 		seats = []domain.Seat{0, 1}
 	}
-	if err := validateSeriesSeats(seats); err != nil {
+	if err := validateSeriesSeats(seats, profile); err != nil {
 		return nil, err
-	}
-	profile := options.Profile
-	if profile == (domain.RuleProfile{}) {
-		profile = domain.DefaultRuleProfile()
 	}
 	return &Series{
 		id:      options.SeriesID,
@@ -157,7 +156,7 @@ func (s *Series) CompleteMatch(session *Session) error {
 	if s.hasResult(session.matchID) {
 		return fmt.Errorf("%w: match %q already completed", ErrInvalidSeries, session.matchID)
 	}
-	view := session.ViewForSeat(0)
+	view := session.ViewForSeat(s.seats[0])
 	if view.Phase != domain.MatchPhaseComplete {
 		return fmt.Errorf("%w: match %q is not complete", ErrInvalidSeries, session.matchID)
 	}
@@ -181,14 +180,14 @@ func (s *Series) CompleteMatch(session *Session) error {
 	return nil
 }
 
-func validateSeriesSeats(seats []domain.Seat) error {
-	if len(seats) != 2 {
-		return fmt.Errorf("%w: domain currently supports exactly 2 active seats", ErrInvalidSeries)
+func validateSeriesSeats(seats []domain.Seat, profile domain.RuleProfile) error {
+	if len(seats) < 2 || len(seats) > profile.MaxPlayers {
+		return fmt.Errorf("%w: got %d seats, allowed 2..%d", ErrInvalidSeries, len(seats), profile.MaxPlayers)
 	}
 	seen := make(map[domain.Seat]bool, len(seats))
-	for _, seat := range seats {
-		if seat < 0 || int(seat) >= len(seats) {
-			return fmt.Errorf("%w: seat %d is outside active seats", ErrInvalidSeries, seat)
+	for index, seat := range seats {
+		if seat != domain.Seat(index) {
+			return fmt.Errorf("%w: seats must be canonical 0..%d", ErrInvalidSeries, len(seats)-1)
 		}
 		if seen[seat] {
 			return fmt.Errorf("%w: duplicate seat %d", ErrInvalidSeries, seat)
