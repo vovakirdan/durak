@@ -100,8 +100,9 @@ Move quality labels can be derived from loss versus the best action:
 - `brilliant`: reserved for later, when search can detect strong non-obvious
   moves.
 
-The exact thresholds are initial constants. Arena and stored match history can
-later calibrate them.
+The exact thresholds are initial constants. Arena can print aggregate
+move-quality counters with `-eval`; stored match history can later produce
+post-game move reports from the same scoring model.
 
 ## Package Boundaries
 
@@ -136,6 +137,11 @@ visible board.
 SQLite history can later support calibration: compare heuristic scores with
 arena outcomes, identify recurring bad moves, and tune weights without changing
 the domain rules.
+
+Arena already has a headless calibration surface: `durak arena -eval` ranks each
+accepted action from the live `TurnContext` and prints aggregate quality/loss
+counters. This avoids TUI work and avoids reconstructing hidden state from
+public events before the history analyzer is designed.
 
 ## Testing Requirements
 

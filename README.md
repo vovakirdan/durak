@@ -154,6 +154,12 @@ Run a headless arena smoke with:
 go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500 -p0 heuristic -p1 simple
 ```
 
+Print a heuristic move-quality summary for arena decisions with:
+
+```sh
+go run ./cmd/durak arena -matches 100 -seed 42 -eval -p0 heuristic -p1 simple
+```
+
 Run a multi-seat arena smoke with:
 
 ```sh
@@ -171,7 +177,9 @@ seat view without oracle hidden cards. `ai-raw-mock` intentionally exercises raw
 command parsing and then retries with legal text commands. Arena supports
 `-seats 2..6` and controller flags `-p0` through `-p5`; omitted seats use
 `simple`. Arena uses `-rules default` unless another supported preset is
-provided later.
+provided later. The optional `-eval` flag ranks each accepted action with the
+seat-view heuristic evaluator and prints aggregate move-quality and average
+loss counters for calibration runs.
 
 Arena can also append private AI decision traces with `-ai-trace-log`, which is
 useful for long-running AI-vs-AI sessions that will be analyzed after the run.

@@ -24,6 +24,7 @@ type arenaOptions struct {
 	matches      int
 	seed         uint64
 	maxActions   int
+	evaluation   bool
 	eventLogPath string
 	dbPath       string
 	baseMatchID  string
@@ -40,6 +41,7 @@ type arenaSummary struct {
 	draws         int
 	rawAIAttempts int
 	rawAIInvalid  int
+	evaluation    arenaEvaluationSummary
 }
 
 func runArena(ctx context.Context, args []string, out, errOut io.Writer) error {
@@ -48,17 +50,19 @@ func runArena(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return err
 	}
 	rawAIStats := &arenaRawAIStats{}
+	evaluationStats := newArenaEvaluationStats(options.evaluation)
 	aiTraceSink, err := options.aiConfig.openTraceSink()
 	if err != nil {
 		return err
 	}
 	traceSink := ai.CombineTraceSinks(rawAIStats, aiTraceSink)
-	result, err := runArenaMatches(ctx, &options, traceSink)
+	result, err := runArenaMatches(ctx, &options, traceSink, evaluationStats)
 	closeErr := closeAITraceSink(aiTraceSink, err)
 	if closeErr != nil {
 		return closeErr
 	}
-	return writeArenaSummary(out, &options, summarizeArena(result, rawAIStats.summary()))
+	summary := summarizeArena(result, rawAIStats.summary(), evaluationStats.summary())
+	return writeArenaSummary(out, &options, &summary)
 }
 
 func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
@@ -76,6 +80,7 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	flags.IntVar(&options.matches, "matches", options.matches, "number of headless matches to run")
 	flags.Uint64Var(&options.seed, "seed", options.seed, "deterministic arena seed")
 	flags.IntVar(&options.maxActions, "max-actions", options.maxActions, "maximum accepted actions per match")
+	flags.BoolVar(&options.evaluation, "eval", options.evaluation, "print heuristic move-quality summary")
 	flags.StringVar(&options.eventLogPath, "event-log", "", "append public arena events to a JSONL file")
 	flags.StringVar(&options.dbPath, "db", "", "write durable match history to a SQLite database")
 	flags.StringVar(&options.baseMatchID, "match-id", "", "base match id for stored match streams")
@@ -113,6 +118,7 @@ func runArenaMatches(
 	ctx context.Context,
 	options *arenaOptions,
 	rawAITraceSink ai.RawCommandTraceSink,
+	evaluationStats *arenaEvaluationStats,
 ) (app.SeriesRunResult, error) {
 	config, err := matchConfig(options.rules, options.seats)
 	if err != nil {
@@ -165,6 +171,7 @@ func runArenaMatches(
 		if controllerErr != nil {
 			return app.SeriesRunResult{}, closeSQLiteStore(sqliteStore, controllerErr)
 		}
+		controller = wrapArenaEvaluationController(seat, controller, evaluationStats)
 		controllers[seat] = controller
 	}
 
@@ -184,13 +191,18 @@ func runArenaMatches(
 	return result, closeSQLiteStore(sqliteStore, err)
 }
 
-func summarizeArena(result app.SeriesRunResult, rawAI arenaRawAISummary) arenaSummary {
+func summarizeArena(
+	result app.SeriesRunResult,
+	rawAI arenaRawAISummary,
+	evaluation arenaEvaluationSummary,
+) arenaSummary {
 	summary := arenaSummary{
 		matches:       len(result.Matches),
 		turns:         len(result.Turns),
 		wins:          make(map[domain.Seat]int),
 		rawAIAttempts: rawAI.attempts,
 		rawAIInvalid:  rawAI.invalid,
+		evaluation:    evaluation,
 	}
 	for _, match := range result.Matches {
 		if match.Draw {
@@ -202,7 +214,7 @@ func summarizeArena(result app.SeriesRunResult, rawAI arenaRawAISummary) arenaSu
 	return summary
 }
 
-func writeArenaSummary(out io.Writer, options *arenaOptions, summary arenaSummary) error {
+func writeArenaSummary(out io.Writer, options *arenaOptions, summary *arenaSummary) error {
 	_, err := fmt.Fprintf(
 		out,
 		"Arena: seat0=%s seat1=%s seats=%d players=%s\nRules: %s\nMatches: %d\nSeed: %d\nMax actions/match: %d\nTurns: %d\nResults: %s draws=%d\n",
@@ -222,15 +234,17 @@ func writeArenaSummary(out io.Writer, options *arenaOptions, summary arenaSummar
 		return err
 	}
 	if summary.rawAIAttempts == 0 {
-		return nil
+		return writeArenaEvaluationSummary(out, options, &summary.evaluation)
 	}
-	_, err = fmt.Fprintf(
+	if _, err = fmt.Fprintf(
 		out,
 		"Raw AI: attempts=%d invalid=%d\n",
 		summary.rawAIAttempts,
 		summary.rawAIInvalid,
-	)
-	return err
+	); err != nil {
+		return err
+	}
+	return writeArenaEvaluationSummary(out, options, &summary.evaluation)
 }
 
 func defaultArenaPlayers() []string {
@@ -258,7 +272,7 @@ func formatArenaPlayers(options *arenaOptions) string {
 	return "[" + strings.Join(parts, ",") + "]"
 }
 
-func formatArenaResults(summary arenaSummary, seats int) string {
+func formatArenaResults(summary *arenaSummary, seats int) string {
 	parts := make([]string, 0, seats)
 	for seat := range seats {
 		domainSeat := domain.Seat(seat)

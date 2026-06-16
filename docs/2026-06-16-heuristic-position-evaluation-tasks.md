@@ -16,9 +16,10 @@ typescript-best-practices not applicable, Go project rules from
 `internal/app/evaluation`, `internal/adapters/bot`, `cmd/durak`, `make check`,
 `go test -race ./...`.
 
-**Implementation Status:** Tasks 1-7 are complete for the first v1 pass. The
-remaining work is calibration and the later probabilistic shallow-search layer,
-not more TUI/SSH/daemon integration.
+**Implementation Status:** Tasks 1-9 are complete for the first v1 pass. Arena
+also has an optional `-eval` move-quality summary for calibration runs. The
+remaining work is post-game history analysis and the later probabilistic
+shallow-search layer, not more TUI/SSH/daemon integration.
 
 ---
 
@@ -277,6 +278,26 @@ sentrux check_rules
 
 4. Accept small score movement only if architecture rules pass and modularity
    does not materially degrade.
+
+## Task 9: Arena Evaluation Summary
+
+**Files:**
+
+- Create: `cmd/durak/arena_evaluation.go`
+- Modify: `cmd/durak/arena.go`
+- Modify: `cmd/durak/main_test.go`
+- Modify: `README.md`
+
+**Steps:**
+
+1. Add optional `durak arena -eval`.
+2. Wrap arena controllers with a diagnostic layer that sees the live
+   `TurnContext`, ranks legal actions with the seat-view evaluator, and records
+   the selected action's loss and quality.
+3. Print aggregate move-quality counters and per-seat average loss.
+4. Keep this in the CLI adapter layer; do not make `internal/app` import
+   `internal/app/evaluation`.
+5. Add a smoke test that only asserts the summary is printed.
 
 ## Deferred Work
 

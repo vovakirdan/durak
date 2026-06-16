@@ -85,6 +85,38 @@ func TestRunArenaAcceptsHeuristicController(t *testing.T) {
 	}
 }
 
+func TestRunArenaPrintsEvaluationSummary(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(t.Context(), []string{
+		"arena",
+		"-matches", "5",
+		"-seed", "42",
+		"-max-actions", "800",
+		"-eval",
+		"-p0", "heuristic",
+		"-p1", "simple",
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run arena returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"Evaluation: turns=",
+		"avg_loss=",
+		"best=",
+		"blunder=",
+		"seats=[0:turns=",
+		"1:turns=",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output = %q, want %q", output, want)
+		}
+	}
+}
+
 func TestRunArenaCompletesThreeSeatMatches(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
