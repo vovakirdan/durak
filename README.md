@@ -148,6 +148,12 @@ Replay one stored match from SQLite with:
 go run ./cmd/durak replay -db .cache/durak.db -match-id demo-1
 ```
 
+Analyze stored match decisions with the seat-view evaluator:
+
+```sh
+go run ./cmd/durak analyze -db .cache/durak.db -match-id demo-1 -limit 5
+```
+
 Run a headless arena smoke with:
 
 ```sh

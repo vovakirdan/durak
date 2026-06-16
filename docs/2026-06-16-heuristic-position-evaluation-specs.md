@@ -134,9 +134,10 @@ hands and likely replies, then aggregate the outcomes. This is closer to
 expectimax over hidden-card distributions than chess minimax over a fully
 visible board.
 
-SQLite history can later support calibration: compare heuristic scores with
-arena outcomes, identify recurring bad moves, and tune weights without changing
-the domain rules.
+SQLite history supports post-game analysis through `durak analyze -db ...`.
+The analyzer replays stored internal events, reconstructs each acting seat's
+pre-action view, scores the stored action against legal alternatives, and prints
+the highest-loss moves for review.
 
 Arena already has a headless calibration surface: `durak arena -eval` ranks each
 accepted action from the live `TurnContext` and prints aggregate quality/loss

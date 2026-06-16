@@ -16,10 +16,11 @@ typescript-best-practices not applicable, Go project rules from
 `internal/app/evaluation`, `internal/adapters/bot`, `cmd/durak`, `make check`,
 `go test -race ./...`.
 
-**Implementation Status:** Tasks 1-9 are complete for the first v1 pass. Arena
-also has an optional `-eval` move-quality summary for calibration runs. The
-remaining work is post-game history analysis and the later probabilistic
-shallow-search layer, not more TUI/SSH/daemon integration.
+**Implementation Status:** Tasks 1-10 are complete for the first v1 pass. Arena
+has an optional `-eval` move-quality summary for calibration runs, and SQLite
+matches can be reviewed with `durak analyze`. The remaining work is richer
+calibration and the later probabilistic shallow-search layer, not more
+TUI/SSH/daemon integration.
 
 ---
 
@@ -299,10 +300,33 @@ sentrux check_rules
    `internal/app/evaluation`.
 5. Add a smoke test that only asserts the summary is printed.
 
+## Task 10: Stored Match Move Analysis
+
+**Files:**
+
+- Create: `internal/app/evaluation/history.go`
+- Create: `internal/app/evaluation/history_replay.go`
+- Create: `internal/app/evaluation/history_test.go`
+- Create: `cmd/durak/analyze.go`
+- Modify: `cmd/durak/main.go`
+- Modify: `cmd/durak/sqlite_test.go`
+- Modify: `README.md`
+
+**Steps:**
+
+1. Read internal SQLite events for one match id.
+2. Replay the match event by event and score each stored action before applying
+   it.
+3. Use only the acting seat's `DecisionContext`, public discard, public table,
+   visible hand sizes, and legal actions.
+4. Print aggregate move-quality counters plus the highest-loss moves.
+5. Keep the CLI command as `durak analyze`; leave TUI/training rendering for a
+   later surface.
+
 ## Deferred Work
 
 - Public history into hidden-card model.
 - Masked action preview for stock/refill actions.
 - Probabilistic shallow search over plausible hidden hands.
-- SQLite score persistence and move-analysis reports.
+- Persistent score tables and richer move-analysis reports.
 - Training UI and oracle post-game analyzer.

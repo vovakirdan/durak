@@ -67,6 +67,33 @@ func TestRunArenaWritesSQLiteHistoryAndReplay(t *testing.T) {
 			t.Fatalf("replay = %q, want %q", replay, want)
 		}
 	}
+
+	var analyzeOut bytes.Buffer
+	var analyzeErr bytes.Buffer
+	err = run(context.Background(), []string{
+		"analyze",
+		"-db", dbPath,
+		"-match-id", "sqlite-arena",
+		"-limit", "3",
+	}, strings.NewReader(""), &analyzeOut, &analyzeErr)
+	if err != nil {
+		t.Fatalf("run analyze returned error: %v; stderr=%q", err, analyzeErr.String())
+	}
+	analysis := analyzeOut.String()
+	for _, want := range []string{
+		"Analysis: match=sqlite-arena ",
+		"moves=",
+		"avg_loss=",
+		"best=",
+		"blunder=",
+		"Worst moves:",
+		"quality=",
+		"action=",
+	} {
+		if !strings.Contains(analysis, want) {
+			t.Fatalf("analysis = %q, want %q", analysis, want)
+		}
+	}
 }
 
 func TestRunPlayWritesSQLiteHistory(t *testing.T) {
