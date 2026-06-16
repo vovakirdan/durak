@@ -39,6 +39,7 @@ type RunOptions struct {
 	SeriesID    app.SeriesID
 	MatchID     app.MatchID
 	EventStore  app.EventStore
+	Recorder    app.MatchRecorder
 }
 
 // RunWithOptions starts the local CLI adapter.
@@ -47,7 +48,7 @@ func RunWithOptions(ctx context.Context, in io.Reader, out io.Writer, options *R
 	if err != nil {
 		return err
 	}
-	if runOptions.EventStore != nil && runOptions.MatchID == "" {
+	if (runOptions.EventStore != nil || runOptions.Recorder != nil) && runOptions.MatchID == "" {
 		return app.ErrEmptyMatchID
 	}
 	controllers, err := runControllers(&runOptions)
@@ -106,6 +107,7 @@ type seriesRunner struct {
 	series      *app.Series
 	deal        domain.DealOptions
 	eventStore  app.EventStore
+	recorder    app.MatchRecorder
 	baseMatchID app.MatchID
 	matchNumber int
 }
@@ -130,6 +132,7 @@ func newSeriesRunner(options *RunOptions) (*seriesRunner, error) {
 		series:      series,
 		deal:        options.Deal,
 		eventStore:  options.EventStore,
+		recorder:    options.Recorder,
 		baseMatchID: options.MatchID,
 	}, nil
 }
@@ -145,9 +148,10 @@ func canonicalSeats(count int) []domain.Seat {
 func (r *seriesRunner) startMatch(ctx context.Context) (*app.Session, error) {
 	r.matchNumber++
 	session, _, err := r.series.StartMatch(ctx, &app.SeriesMatchOptions{
-		MatchID:    matchIDFor(r.baseMatchID, r.matchNumber),
-		Deal:       r.deal,
-		EventStore: r.eventStore,
+		MatchID:       matchIDFor(r.baseMatchID, r.matchNumber),
+		Deal:          r.deal,
+		EventStore:    r.eventStore,
+		MatchRecorder: r.recorder,
 	})
 	if err != nil {
 		r.matchNumber--

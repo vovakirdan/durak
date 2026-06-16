@@ -30,12 +30,16 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	if len(args) > 0 && args[0] == "history" {
 		return runHistory(ctx, args[1:], out, errOut)
 	}
+	if len(args) > 0 && args[0] == "replay" {
+		return runReplay(ctx, args[1:], out, errOut)
+	}
 	return runPlay(ctx, args, in, out, errOut)
 }
 
 func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer) error {
 	var seed seedFlag
 	var eventLogPath string
+	var dbPath string
 	var matchID string
 	var seats int
 	var humanSeat int
@@ -54,6 +58,7 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 	}
 	flags.StringVar(&rulesName, "rules", rulesName, "rule preset: default")
 	flags.StringVar(&eventLogPath, "event-log", "", "append public match events to a JSONL file")
+	flags.StringVar(&dbPath, "db", "", "write durable match history to a SQLite database")
 	flags.StringVar(&matchID, "match-id", "", "base match id for event log; generated when omitted")
 	aiConfig.bind(flags)
 	if err := flags.Parse(args); err != nil {
@@ -114,8 +119,27 @@ func runPlay(ctx context.Context, args []string, in io.Reader, out, errOut io.Wr
 		options.EventStore = store
 		options.MatchID = app.MatchID(matchID)
 	}
+	var sqliteStore *storage.SQLiteStore
+	if dbPath != "" {
+		store, err := storage.OpenSQLiteStore(ctx, dbPath)
+		if err != nil {
+			return closeAITraceSink(aiTraceSink, err)
+		}
+		sqliteStore = store
+		if matchID == "" {
+			generatedID, err := newMatchID()
+			if err != nil {
+				return closeAITraceSink(aiTraceSink, closeSQLiteStore(sqliteStore, err))
+			}
+			matchID = string(generatedID)
+		}
+		options.Recorder = sqliteStore
+		options.MatchID = app.MatchID(matchID)
+	}
 
-	return closeAITraceSink(aiTraceSink, cli.RunWithOptions(ctx, in, out, &options))
+	runErr := cli.RunWithOptions(ctx, in, out, &options)
+	runErr = closeSQLiteStore(sqliteStore, runErr)
+	return closeAITraceSink(aiTraceSink, runErr)
 }
 
 type seedFlag struct {

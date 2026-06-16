@@ -25,6 +25,7 @@ type arenaOptions struct {
 	seed         uint64
 	maxActions   int
 	eventLogPath string
+	dbPath       string
 	baseMatchID  string
 	seats        int
 	players      []string
@@ -76,7 +77,8 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	flags.Uint64Var(&options.seed, "seed", options.seed, "deterministic arena seed")
 	flags.IntVar(&options.maxActions, "max-actions", options.maxActions, "maximum accepted actions per match")
 	flags.StringVar(&options.eventLogPath, "event-log", "", "append public arena events to a JSONL file")
-	flags.StringVar(&options.baseMatchID, "match-id", "", "base match id for event log")
+	flags.StringVar(&options.dbPath, "db", "", "write durable match history to a SQLite database")
+	flags.StringVar(&options.baseMatchID, "match-id", "", "base match id for stored match streams")
 	flags.IntVar(&options.seats, "seats", options.seats, "number of active seats")
 	for seat := range options.players {
 		flags.StringVar(&options.players[seat], fmt.Sprintf("p%d", seat), options.players[seat],
@@ -134,13 +136,23 @@ func runArenaMatches(
 		}
 		eventStore = store
 	}
+	var matchRecorder app.MatchRecorder
+	var sqliteStore *storage.SQLiteStore
+	if options.dbPath != "" {
+		store, storeErr := storage.OpenSQLiteStore(ctx, options.dbPath)
+		if storeErr != nil {
+			return app.SeriesRunResult{}, storeErr
+		}
+		sqliteStore = store
+		matchRecorder = store
+	}
 
 	controllers := make(map[domain.Seat]app.PlayerController, len(seats))
 	for _, seat := range seats {
 		kind := options.players[int(seat)]
 		aiClient, clientErr := options.aiConfig.clientForKind(kind)
 		if clientErr != nil {
-			return app.SeriesRunResult{}, clientErr
+			return app.SeriesRunResult{}, closeSQLiteStore(sqliteStore, clientErr)
 		}
 		controller, controllerErr := newPlayerController(&playerControllerConfig{
 			Kind:      kind,
@@ -151,7 +163,7 @@ func runArenaMatches(
 			AI:        aiClient,
 		})
 		if controllerErr != nil {
-			return app.SeriesRunResult{}, controllerErr
+			return app.SeriesRunResult{}, closeSQLiteStore(sqliteStore, controllerErr)
 		}
 		controllers[seat] = controller
 	}
@@ -161,13 +173,15 @@ func runArenaMatches(
 		Controllers:        controllers,
 		Deal:               domain.SeededDealOptions(options.seed),
 		EventStore:         eventStore,
+		MatchRecorder:      matchRecorder,
 		BaseMatchID:        app.MatchID(options.baseMatchID),
 		MaxActionsPerMatch: options.maxActions,
 	})
 	if err != nil {
-		return app.SeriesRunResult{}, err
+		return app.SeriesRunResult{}, closeSQLiteStore(sqliteStore, err)
 	}
-	return runner.Run(ctx, options.matches)
+	result, err := runner.Run(ctx, options.matches)
+	return result, closeSQLiteStore(sqliteStore, err)
 }
 
 func summarizeArena(result app.SeriesRunResult, rawAI arenaRawAISummary) arenaSummary {

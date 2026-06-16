@@ -275,10 +275,23 @@ func TestRunHistoryRequiresEventLog(t *testing.T) {
 
 	err := run(context.Background(), []string{"history"}, strings.NewReader(""), &out, &errOut)
 	if err == nil {
-		t.Fatal("run history returned nil error, want missing event log")
+		t.Fatal("run history returned nil error, want missing history source")
 	}
-	if !strings.Contains(err.Error(), "event-log is required") {
-		t.Fatalf("error = %v, want event-log error", err)
+	if !strings.Contains(err.Error(), "event-log or db is required") {
+		t.Fatalf("error = %v, want history source error", err)
+	}
+}
+
+func TestRunReplayRequiresSQLiteInputs(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(context.Background(), []string{"replay"}, strings.NewReader(""), &out, &errOut)
+	if err == nil {
+		t.Fatal("run replay returned nil error, want missing db")
+	}
+	if !strings.Contains(err.Error(), "db is required") {
+		t.Fatalf("error = %v, want db error", err)
 	}
 }
 

@@ -15,6 +15,7 @@ import (
 
 type historyOptions struct {
 	eventLogPath string
+	dbPath       string
 }
 
 func runHistory(ctx context.Context, args []string, out, errOut io.Writer) error {
@@ -22,6 +23,16 @@ func runHistory(ctx context.Context, args []string, out, errOut io.Writer) error
 	if err != nil {
 		return err
 	}
+	if options.dbPath != "" {
+		return withSQLiteStore(ctx, options.dbPath, func(store *storage.SQLiteStore) error {
+			summaries, readErr := app.ReadMatchSummaries(ctx, store)
+			if readErr != nil {
+				return readErr
+			}
+			return writeHistory(out, summaries)
+		})
+	}
+
 	store, err := storage.NewJSONLEventStore(options.eventLogPath)
 	if err != nil {
 		return err
@@ -42,14 +53,18 @@ func parseHistoryOptions(args []string, errOut io.Writer) (historyOptions, error
 	flags := flag.NewFlagSet("durak history", flag.ContinueOnError)
 	flags.SetOutput(errOut)
 	flags.StringVar(&options.eventLogPath, "event-log", "", "read public match events from a JSONL file")
+	flags.StringVar(&options.dbPath, "db", "", "read durable match history from a SQLite database")
 	if err := flags.Parse(args); err != nil {
 		return historyOptions{}, err
 	}
 	if flags.NArg() != 0 {
 		return historyOptions{}, fmt.Errorf("unknown history argument %q", flags.Arg(0))
 	}
-	if options.eventLogPath == "" {
-		return historyOptions{}, fmt.Errorf("event-log is required")
+	if options.eventLogPath == "" && options.dbPath == "" {
+		return historyOptions{}, fmt.Errorf("event-log or db is required")
+	}
+	if options.eventLogPath != "" && options.dbPath != "" {
+		return historyOptions{}, fmt.Errorf("only one of event-log or db can be set")
 	}
 	return options, nil
 }
