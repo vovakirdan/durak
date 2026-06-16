@@ -79,6 +79,93 @@ func TestRankActionsPrefersLowNonTrumpAttack(t *testing.T) {
 	}
 }
 
+func TestRankActionsScoresPairedAttackRankAsCloseAlternative(t *testing.T) {
+	loneLow := domain.Action{Kind: domain.ActionKindAttack, Seat: domain.Seat(0), Card: card(domain.Six, domain.Clubs)}
+	paired := domain.Action{Kind: domain.ActionKindAttack, Seat: domain.Seat(0), Card: card(domain.Eight, domain.Diamonds)}
+	decision := app.DecisionContext{
+		SeatView: app.SeatView{
+			Seat:       domain.Seat(0),
+			Phase:      domain.MatchPhaseAttack,
+			Attacker:   domain.Seat(0),
+			Defender:   domain.Seat(1),
+			TrumpSuit:  domain.Hearts,
+			HandSizes:  []int{3, 3},
+			StockCount: 2,
+		},
+		Hand: []domain.Card{
+			loneLow.Card,
+			paired.Card,
+			card(domain.Eight, domain.Spades),
+		},
+		LegalActions: []domain.Action{loneLow, paired},
+	}
+
+	results := evaluation.RankActions(&decision, evaluation.BuildHiddenCards(&decision, nil))
+	pairedResult := actionResult(t, results, paired)
+
+	if pairedResult.Loss > 80 {
+		t.Fatalf("paired attack loss = %d, want close alternative", pairedResult.Loss)
+	}
+}
+
+func TestRankActionsThrowsBeforeDoneUnderPressure(t *testing.T) {
+	throw := domain.Action{Kind: domain.ActionKindThrowIn, Seat: domain.Seat(0), Card: card(domain.Six, domain.Clubs)}
+	done := domain.Action{Kind: domain.ActionKindFinishDefense, Seat: domain.Seat(0)}
+	decision := app.DecisionContext{
+		SeatView: app.SeatView{
+			Seat:       domain.Seat(0),
+			Phase:      domain.MatchPhaseThrowIn,
+			Attacker:   domain.Seat(0),
+			Defender:   domain.Seat(1),
+			TrumpSuit:  domain.Hearts,
+			HandSizes:  []int{2, 3},
+			StockCount: 10,
+			Table: []domain.TablePair{
+				{
+					Attack:   card(domain.Seven, domain.Clubs),
+					Defense:  card(domain.Eight, domain.Clubs),
+					Defended: true,
+				},
+			},
+		},
+		Hand:         []domain.Card{throw.Card, card(domain.Ace, domain.Spades)},
+		LegalActions: []domain.Action{done, throw},
+	}
+
+	results := evaluation.RankActions(&decision, evaluation.BuildHiddenCards(&decision, nil))
+
+	if results[0].Action != throw {
+		t.Fatalf("best action = %+v, want pressure throw-in", results[0].Action)
+	}
+}
+
+func TestRankActionsThrowsBeforeFinishingTake(t *testing.T) {
+	throw := domain.Action{Kind: domain.ActionKindThrowIn, Seat: domain.Seat(0), Card: card(domain.Six, domain.Clubs)}
+	done := domain.Action{Kind: domain.ActionKindFinishTake, Seat: domain.Seat(0)}
+	decision := app.DecisionContext{
+		SeatView: app.SeatView{
+			Seat:       domain.Seat(0),
+			Phase:      domain.MatchPhaseTaking,
+			Attacker:   domain.Seat(0),
+			Defender:   domain.Seat(1),
+			TrumpSuit:  domain.Hearts,
+			HandSizes:  []int{2, 5},
+			StockCount: 8,
+			Table: []domain.TablePair{
+				{Attack: card(domain.Seven, domain.Clubs)},
+			},
+		},
+		Hand:         []domain.Card{throw.Card, card(domain.Ace, domain.Spades)},
+		LegalActions: []domain.Action{done, throw},
+	}
+
+	results := evaluation.RankActions(&decision, evaluation.BuildHiddenCards(&decision, nil))
+
+	if results[0].Action != throw {
+		t.Fatalf("best action = %+v, want throw into taking defender", results[0].Action)
+	}
+}
+
 func TestRankActionsPenalizesTakeWhenDefenseExists(t *testing.T) {
 	defend := domain.Action{
 		Kind:        domain.ActionKindDefend,

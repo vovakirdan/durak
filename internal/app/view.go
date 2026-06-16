@@ -24,4 +24,5 @@ type DecisionContext struct {
 	SeatView
 	Hand         []domain.Card
 	LegalActions []domain.Action
+	PublicMemory PublicCardMemory
 }

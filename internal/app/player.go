@@ -129,6 +129,7 @@ func cloneDecisionContext(decision *DecisionContext) DecisionContext {
 		SeatView:     cloneSeatView(&decision.SeatView),
 		Hand:         slices.Clone(decision.Hand),
 		LegalActions: slices.Clone(decision.LegalActions),
+		PublicMemory: decision.PublicMemory.Clone(),
 	}
 }
 

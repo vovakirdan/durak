@@ -27,6 +27,10 @@ const (
 	FeatureActionKind = "action_kind"
 	// FeatureActionCardEconomy explains card spending quality for an action.
 	FeatureActionCardEconomy = "action_card_economy"
+	// FeatureActionPressure explains tactical pressure created by an action.
+	FeatureActionPressure = "action_pressure"
+	// FeatureActionDefenseSafety explains risks left after a defense action.
+	FeatureActionDefenseSafety = "action_defense_safety"
 )
 
 // FeatureContribution explains one part of a position or action score.

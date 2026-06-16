@@ -1,6 +1,7 @@
 package evaluation_test
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/vovakirdan/durak/internal/app"
@@ -63,5 +64,47 @@ func TestBuildHiddenCardsLateGameCollapsesOpponentRemainder(t *testing.T) {
 	}
 	if got := hidden.OpponentCardProbability(deck[0], 2); got != 0 {
 		t.Fatalf("known card probability = %.3f, want 0", got)
+	}
+}
+
+func TestBuildHiddenCardsKeepsKnownOpponentCards(t *testing.T) {
+	knownOpponent := card(domain.Ace, domain.Spades)
+	own := card(domain.Six, domain.Clubs)
+	decision := app.DecisionContext{
+		SeatView: app.SeatView{
+			Seat:           domain.Seat(0),
+			TrumpIndicator: card(domain.Nine, domain.Hearts),
+			HandSizes:      []int{1, 1},
+		},
+		Hand: []domain.Card{own},
+		PublicMemory: app.PublicCardMemory{
+			Seat:           domain.Seat(0),
+			Hand:           []domain.Card{own},
+			TrumpIndicator: card(domain.Nine, domain.Hearts),
+			KnownHeld: [][]domain.Card{
+				{own},
+				{knownOpponent},
+			},
+			Seen: []domain.Card{
+				own,
+				knownOpponent,
+				card(domain.Nine, domain.Hearts),
+			},
+		},
+	}
+
+	hidden := evaluation.BuildHiddenCards(&decision, nil)
+
+	if !hidden.KnownByOpponent(knownOpponent) {
+		t.Fatalf("%v is not known by opponent", knownOpponent)
+	}
+	if got := hidden.OpponentCardProbability(knownOpponent, 1); got != 1 {
+		t.Fatalf("known opponent probability = %.3f, want 1", got)
+	}
+	if slices.Contains(hidden.UnknownPool, knownOpponent) {
+		t.Fatalf("%v in unknown pool, want known opponent card removed", knownOpponent)
+	}
+	if got := hidden.OpponentCardProbability(own, 1); got != 0 {
+		t.Fatalf("own card probability = %.3f, want 0", got)
 	}
 }

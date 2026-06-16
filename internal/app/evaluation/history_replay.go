@@ -20,13 +20,15 @@ func AnalyzeInternalEvents(events []app.InternalEvent, profile domain.RuleProfil
 
 	analysis := MatchAnalysis{MatchID: events[0].MatchID}
 	var match *domain.Match
+	publicHistory := app.NewPublicCardHistory()
 	replayedEvents := make([]domain.Event, 0, len(events))
 	for i := range events {
 		event := events[i]
-		nextMatch, replayed, err := analyzeInternalEvent(match, &event, &analysis, profile)
+		nextMatch, replayed, err := analyzeInternalEvent(match, &event, &analysis, profile, &publicHistory)
 		if err != nil {
 			return MatchAnalysis{}, err
 		}
+		publicHistory.Apply(event.Domain)
 		match = nextMatch
 		replayedEvents = append(replayedEvents, replayed...)
 	}
@@ -44,6 +46,7 @@ func analyzeInternalEvent(
 	event *app.InternalEvent,
 	analysis *MatchAnalysis,
 	profile domain.RuleProfile,
+	publicHistory *app.PublicCardHistory,
 ) (*domain.Match, []domain.Event, error) {
 	switch event.Domain.Kind {
 	case domain.EventKindMatchStarted:
@@ -58,7 +61,7 @@ func analyzeInternalEvent(
 	case domain.EventKindAttack, domain.EventKindDefend, domain.EventKindThrowIn,
 		domain.EventKindPassThrowIn, domain.EventKindTransfer, domain.EventKindTake,
 		domain.EventKindFinishDefense, domain.EventKindFinishTake:
-		replayed, err := analyzeAndApplyStoredAction(match, event, analysis)
+		replayed, err := analyzeAndApplyStoredAction(match, event, analysis, publicHistory)
 		return match, replayed, err
 	case domain.EventKindConcede:
 		replayed, err := analyzeStoredConcede(match, event, analysis)
@@ -94,8 +97,9 @@ func analyzeAndApplyStoredAction(
 	match *domain.Match,
 	event *app.InternalEvent,
 	analysis *MatchAnalysis,
+	publicHistory *app.PublicCardHistory,
 ) ([]domain.Event, error) {
-	move, err := analyzeStoredAction(match, event, len(analysis.Moves)+1)
+	move, err := analyzeStoredAction(match, event, len(analysis.Moves)+1, publicHistory)
 	if err != nil {
 		return nil, err
 	}
@@ -129,7 +133,12 @@ func analyzeStoredConcede(
 	return match.DrainEvents(), nil
 }
 
-func analyzeStoredAction(match *domain.Match, event *app.InternalEvent, turnNumber int) (MoveAnalysis, error) {
+func analyzeStoredAction(
+	match *domain.Match,
+	event *app.InternalEvent,
+	turnNumber int,
+	publicHistory *app.PublicCardHistory,
+) (MoveAnalysis, error) {
 	if match == nil {
 		return MoveAnalysis{}, fmt.Errorf("%w: action before deal at sequence %d",
 			app.ErrInvalidReplay, event.Sequence)
@@ -139,7 +148,7 @@ func analyzeStoredAction(match *domain.Match, event *app.InternalEvent, turnNumb
 			app.ErrInvalidReplay, event.Sequence)
 	}
 	action := event.Domain.Action.Action
-	decision := decisionContextFromMatch(match, action.Seat)
+	decision := decisionContextFromMatch(match, action.Seat, publicHistory)
 	hidden := BuildHiddenCards(&decision, match.Discard())
 	position := Evaluate(&decision, hidden)
 	actions := RankActions(&decision, hidden)
@@ -173,8 +182,12 @@ func rankedAction(actions []ActionEvaluation, action domain.Action) (selected *A
 	return nil, 0
 }
 
-func decisionContextFromMatch(match *domain.Match, seat domain.Seat) app.DecisionContext {
-	return app.DecisionContext{
+func decisionContextFromMatch(
+	match *domain.Match,
+	seat domain.Seat,
+	publicHistory *app.PublicCardHistory,
+) app.DecisionContext {
+	decision := app.DecisionContext{
 		SeatView: app.SeatView{
 			Seat:               seat,
 			Phase:              match.Phase(),
@@ -193,6 +206,10 @@ func decisionContextFromMatch(match *domain.Match, seat domain.Seat) app.Decisio
 		Hand:         match.Hand(seat),
 		LegalActions: match.LegalActions(seat),
 	}
+	if publicHistory != nil {
+		decision.PublicMemory = publicHistory.Snapshot(seat, &decision)
+	}
+	return decision
 }
 
 func analysisHandSizes(match *domain.Match) []int {

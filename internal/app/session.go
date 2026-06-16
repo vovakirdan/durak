@@ -38,6 +38,7 @@ type Session struct {
 	internalStore  InternalEventStore
 	matchRecorder  MatchRecorder
 	publicEvents   []Event
+	publicHistory  PublicCardHistory
 	initialDeal    *domain.InitialDeal
 	nextSequence   uint64
 }
@@ -191,11 +192,13 @@ func (s *Session) ApplyStrategy(ctx context.Context, seat domain.Seat, strategy 
 // DecisionContext returns read-only information needed to choose an action.
 func (s *Session) DecisionContext(seat domain.Seat) DecisionContext {
 	view := s.ViewForSeat(seat)
-	return DecisionContext{
+	decision := DecisionContext{
 		SeatView:     view,
 		Hand:         s.match.Hand(seat),
 		LegalActions: slices.Clone(s.match.LegalActions(seat)),
 	}
+	decision.PublicMemory = s.publicHistory.Snapshot(seat, &decision)
+	return decision
 }
 
 // ViewForSeat returns a public seat-specific view of the match.
@@ -235,6 +238,7 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 	}
 	if s.eventStore == nil {
 		if s.internalStore == nil && s.matchRecorder == nil {
+			s.applyPublicHistory(events)
 			s.match.DrainEvents()
 			return nil
 		}
@@ -275,12 +279,19 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 			return err
 		}
 	}
+	s.applyPublicHistory(events)
 	s.nextSequence += uint64(len(events))
 	if s.matchRecorder != nil {
 		s.publicEvents = append(s.publicEvents, cloneEvents(storedEvents)...)
 	}
 	s.match.DrainEvents()
 	return nil
+}
+
+func (s *Session) applyPublicHistory(events []domain.Event) {
+	for _, event := range events {
+		s.publicHistory.Apply(event)
+	}
 }
 
 func (s *Session) matchRecordBatch(publicEvents []Event, internalEvents []InternalEvent) (MatchRecordBatch, error) {
