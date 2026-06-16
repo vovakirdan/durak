@@ -13,6 +13,8 @@ const (
 	ControllerSimple = "simple"
 	// ControllerRandom chooses uniformly from legal actions.
 	ControllerRandom = "random"
+	// ControllerHeuristic chooses the highest ranked action from position evaluation.
+	ControllerHeuristic = "heuristic"
 )
 
 var (
@@ -40,6 +42,8 @@ func NewController(spec ControllerSpec, seat domain.Seat) (app.PlayerController,
 	switch kind {
 	case ControllerSimple:
 		return app.StrategyController{Strategy: NewSimpleStrategy()}, nil
+	case ControllerHeuristic:
+		return NewHeuristicController(), nil
 	case ControllerRandom:
 		if !spec.Seeded {
 			return NewRandomLegalController(nil), nil
@@ -59,7 +63,7 @@ func NewController(spec ControllerSpec, seat domain.Seat) (app.PlayerController,
 func ValidateControllerKind(kind string) error {
 	kind = normalizeControllerKind(kind)
 	switch kind {
-	case ControllerSimple, ControllerRandom:
+	case ControllerSimple, ControllerRandom, ControllerHeuristic:
 		return nil
 	default:
 		return fmt.Errorf("%w: %q", ErrUnknownController, kind)

@@ -49,6 +49,21 @@ func TestNewControllerCreatesSeededRandom(t *testing.T) {
 	}
 }
 
+func TestNewControllerCreatesHeuristic(t *testing.T) {
+	controller, err := bot.NewController(bot.ControllerSpec{Kind: bot.ControllerHeuristic}, domain.Seat(1))
+	if err != nil {
+		t.Fatalf("NewController returned error: %v", err)
+	}
+	decision := controllerDecision(t, controller, []domain.Action{
+		{Kind: domain.ActionKindTake, Seat: domain.Seat(1)},
+		{Kind: domain.ActionKindDefend, Seat: domain.Seat(1), Card: domain.Card{Rank: domain.Seven, Suit: domain.Clubs}},
+	})
+
+	if decision.Action.Kind != domain.ActionKindDefend {
+		t.Fatalf("decision = %+v, want heuristic defend priority", decision)
+	}
+}
+
 func TestNewControllerRejectsUnknownKind(t *testing.T) {
 	_, err := bot.NewController(bot.ControllerSpec{Kind: "unknown"}, domain.Seat(0))
 	if !errors.Is(err, bot.ErrUnknownController) {

@@ -48,6 +48,7 @@ func controllerNames() string {
 	return strings.Join([]string{
 		bot.ControllerSimple,
 		bot.ControllerRandom,
+		bot.ControllerHeuristic,
 		controllerAIRawMock,
 		controllerAIRawExec,
 		controllerAIOpenAI,
@@ -60,7 +61,7 @@ func newPlayerController(config *playerControllerConfig) (app.PlayerController, 
 	}
 	kind := normalizePlayerControllerKind(config.Kind)
 	switch kind {
-	case bot.ControllerSimple, bot.ControllerRandom:
+	case bot.ControllerSimple, bot.ControllerRandom, bot.ControllerHeuristic:
 		return bot.NewController(bot.ControllerSpec{
 			Kind:   kind,
 			Seed:   config.Seed,
@@ -140,7 +141,7 @@ func simpleFallbackController() app.PlayerController {
 
 func validatePlayerControllerKind(kind string) error {
 	switch normalizePlayerControllerKind(kind) {
-	case bot.ControllerSimple, bot.ControllerRandom, controllerAIRawMock, controllerAIRawExec, controllerAIOpenAI:
+	case bot.ControllerSimple, bot.ControllerRandom, bot.ControllerHeuristic, controllerAIRawMock, controllerAIRawExec, controllerAIOpenAI:
 		return nil
 	default:
 		return fmt.Errorf("%w: %q", errUnknownPlayerController, kind)

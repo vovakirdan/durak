@@ -15,7 +15,7 @@ Implemented core pieces:
   throw-in windows, transfer, take, refill, active-seat skipping, and match
   completion.
 - Application session layer, event replay/history projection foundation, and a
-  simple controller registry for deterministic and random bots.
+  simple controller registry for deterministic, random, and heuristic bots.
 - Interactive CLI commands by action number or short commands, with one local
   human seat, controller-driven seats up to 6 players, and consecutive matches
   in one local series.
@@ -60,8 +60,10 @@ go run ./cmd/durak -seed 42 -seats 4 -human-seat 0 \
 ```
 
 Available player controllers for the opponent are `simple`, `random`,
-`ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The AI mock is a deterministic
-local tester that returns raw text commands through the shared parser.
+`heuristic`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The heuristic bot
+uses the first seat-view position evaluator and action ranking layer. The AI
+mock is a deterministic local tester that returns raw text commands through the
+shared parser.
 `ai-openai` calls an OpenAI-compatible `/chat/completions` endpoint directly
 through the official Go SDK. `ai-raw-exec` is still available for local wrapper
 experiments. In interactive play, `-bot` sets the default controller for every
@@ -149,7 +151,7 @@ go run ./cmd/durak replay -db .cache/durak.db -match-id demo-1
 Run a headless arena smoke with:
 
 ```sh
-go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500 -p0 simple -p1 random
+go run ./cmd/durak arena -matches 100 -seed 42 -max-actions 500 -p0 heuristic -p1 simple
 ```
 
 Run a multi-seat arena smoke with:
@@ -162,12 +164,14 @@ go run ./cmd/durak arena -matches 100 -seats 4 -seed 42 \
 Arena mode is a development tool for match stability checks. It runs
 controllers through the application headless runner and can write public events
 with `-event-log` and durable SQLite history with `-db`/`-match-id`. Available
-controllers are `simple`, `random`, `ai-raw-mock`, `ai-raw-exec`, and
-`ai-openai`; `random` chooses uniformly from legal actions and does not evaluate
-the position, while `ai-raw-mock` intentionally exercises raw command parsing
-and then retries with legal text commands. Arena supports `-seats 2..6` and
-controller flags `-p0` through `-p5`; omitted seats use `simple`. Arena uses
-`-rules default` unless another supported preset is provided later.
+controllers are `simple`, `random`, `heuristic`, `ai-raw-mock`, `ai-raw-exec`,
+and `ai-openai`; `random` chooses uniformly from legal actions and does not
+evaluate the position, while `heuristic` ranks legal actions from the visible
+seat view without oracle hidden cards. `ai-raw-mock` intentionally exercises raw
+command parsing and then retries with legal text commands. Arena supports
+`-seats 2..6` and controller flags `-p0` through `-p5`; omitted seats use
+`simple`. Arena uses `-rules default` unless another supported preset is
+provided later.
 
 Arena can also append private AI decision traces with `-ai-trace-log`, which is
 useful for long-running AI-vs-AI sessions that will be analyzed after the run.
@@ -185,6 +189,8 @@ restricted workspaces without writing to the user-level Go cache.
 - [PRD](docs/2026-06-10-durak-prd.md)
 - [Match Configuration Draft](docs/2026-06-15-match-config-specs.md)
 - [Storage Foundation](docs/2026-06-16-storage-foundation-specs.md)
+- [Heuristic Position Evaluation](docs/2026-06-16-heuristic-position-evaluation-specs.md)
+- [Heuristic Position Evaluation Tasks](docs/2026-06-16-heuristic-position-evaluation-tasks.md)
 - [Stack](docs/STACK.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Project Rules](docs/PROJECT_RULES.md)
