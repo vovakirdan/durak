@@ -1,6 +1,6 @@
 # Storage Foundation Spec
 
-Status: Draft accepted for the next implementation iteration.
+Status: Implemented for the current SQLite foundation iteration.
 
 ## Purpose
 
@@ -14,6 +14,20 @@ persistence.
 The canonical durable source of truth is the internal match event stream. Public
 events are a safe projection/export. Summaries are read models. Config snapshots
 are immutable records that explain which app-level rules produced a match.
+
+## Current Implementation
+
+- `internal/app.MatchRecorder` accepts one transactional batch with the config
+  snapshot, public events, internal events, and an optional completed-match
+  summary.
+- `internal/adapters/storage.SQLiteStore` applies embedded Goose migrations and
+  stores the batch with Bun inside a SQLite transaction.
+- `cmd/durak -db` and `cmd/durak arena -db` write durable match history.
+- `cmd/durak history -db` lists completed-match summaries.
+- `cmd/durak replay -db -match-id <id>` reconstructs a stored match from
+  canonical internal events.
+- JSONL remains a public event export/debug adapter. It is not the canonical
+  replay source because it omits hidden deal state.
 
 ## Library Choices
 
