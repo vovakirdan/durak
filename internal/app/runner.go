@@ -27,6 +27,7 @@ type SeriesRunnerOptions struct {
 	Deal               domain.DealOptions
 	EventStore         EventStore
 	InternalEventStore InternalEventStore
+	MatchRecorder      MatchRecorder
 	BaseMatchID        MatchID
 	MaxActionsPerMatch int
 }
@@ -38,6 +39,7 @@ type SeriesRunner struct {
 	deal               domain.DealOptions
 	eventStore         EventStore
 	internalEventStore InternalEventStore
+	matchRecorder      MatchRecorder
 	baseMatchID        MatchID
 	maxActionsPerMatch int
 	nextMatchNumber    int
@@ -81,6 +83,7 @@ func NewSeriesRunner(options *SeriesRunnerOptions) (*SeriesRunner, error) {
 		deal:               options.Deal,
 		eventStore:         options.EventStore,
 		internalEventStore: options.InternalEventStore,
+		matchRecorder:      options.MatchRecorder,
 		baseMatchID:        options.BaseMatchID,
 		maxActionsPerMatch: maxActions,
 	}, nil
@@ -100,11 +103,12 @@ func (r *SeriesRunner) Run(ctx context.Context, matchCount int) (SeriesRunResult
 	for range matchCount {
 		matchNumber := r.nextMatchNumber + 1
 		matchID := runnerMatchID(r.baseMatchID, matchNumber)
-		session, _, err := r.series.StartMatch(ctx, SeriesMatchOptions{
+		session, _, err := r.series.StartMatch(ctx, &SeriesMatchOptions{
 			MatchID:            matchID,
 			Deal:               r.deal,
 			EventStore:         r.eventStore,
 			InternalEventStore: r.internalEventStore,
+			MatchRecorder:      r.matchRecorder,
 		})
 		if err != nil {
 			return result, err

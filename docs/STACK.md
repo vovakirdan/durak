@@ -94,9 +94,10 @@
 
 ## 6. Data Layer
 
-- **Primary database:** no database for the first CLI/core milestone; SQLite for the first persistent daemon/history milestone.
-- **Go database access:** repository interfaces at the application boundary. Candidate implementations include direct `database/sql`, `sqlc`-generated code, or a small query helper. Avoid a full ORM unless the persistence model becomes CRUD-heavy enough to justify it.
-- **SQLite driver direction:** prefer a pure-Go SQLite driver if single-binary cross-compilation remains important. Re-evaluate against CGO-based drivers when persistence begins, especially if SQLite extension support or performance becomes more important than build portability.
+- **Primary database:** SQLite for the first indexed persistence/history milestone.
+- **Go database access:** Bun for the runtime database framework and query layer, behind repository/application ports. Runtime storage code should use Bun models, transactions, and query builders rather than raw SQL strings.
+- **Migrations:** Goose for versioned migrations with embedded migration files.
+- **SQLite driver direction:** use Bun's SQLite shim and SQLite dialect for the first implementation, preserving the portable-binary direction. Re-evaluate CGO-based drivers only if SQLite extension support or performance becomes more important than build portability.
 - **Cache or queue dependencies:** none for MVP or early daemon.
 - **Search or analytics storage:** none initially; export match history/events for offline analysis before adding dedicated analytics storage.
 - **Why this choice fits:** SQLite is enough for hosted private play, match history, ratings, and currency ledgers while keeping operations small. PostgreSQL remains an upgrade path, not an early dependency.
@@ -133,9 +134,10 @@
 - Ratatui is a strong Rust TUI library, but SSH-hosted TUI support is less direct for this product than Charm's Go stack: https://docs.rs/ratatui/latest/ratatui/
 - Textual is a strong Python TUI framework with terminal and browser serving, but it weakens the single-portable-binary and Go/Wish SSH path: https://textual.textualize.io/
 - `database/sql` is a standard Go abstraction with explicit connection-pool and transaction semantics, but using it directly everywhere can create manual scanning boilerplate: https://pkg.go.dev/database/sql
-- `modernc.org/sqlite` is a CGo-free SQLite driver candidate; `github.com/mattn/go-sqlite3` is mature and `database/sql` compatible but requires CGO/GCC: https://pkg.go.dev/modernc.org/sqlite and https://github.com/mattn/go-sqlite3
+- Bun provides a Go ORM/query layer with SQLite support, transactions, migrations, and model-based query builders: https://bun.uptrace.dev/
+- Goose provides versioned Go/SQL migrations and supports embedded migration files and SQLite: https://github.com/pressly/goose
+- Bun's SQLite shim is the first SQLite driver direction for portability; `github.com/mattn/go-sqlite3` remains a mature CGO-based fallback if future SQLite extension support or performance requires it: https://bun.uptrace.dev/guide/drivers.html and https://github.com/mattn/go-sqlite3
 - `log/slog` provides standard structured logging with pluggable handlers; zap and zerolog remain candidates if daemon performance or handler features require them: https://pkg.go.dev/log/slog, https://github.com/uber-go/zap, and https://github.com/rs/zerolog
-- Goose and golang-migrate are both viable Go migration candidates; defer the choice until there is an actual SQLite schema to evolve: https://github.com/pressly/goose and https://github.com/golang-migrate/migrate
 - The official OpenAI Go SDK supports `option.WithBaseURL` and `option.WithAPIKey`, which is the smallest maintained path to OpenAI-compatible providers: https://github.com/openai/openai-go
 
 ## 11. Rejected Alternatives

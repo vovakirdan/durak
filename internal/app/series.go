@@ -28,6 +28,7 @@ type SeriesMatchOptions struct {
 	Deal               domain.DealOptions
 	EventStore         EventStore
 	InternalEventStore InternalEventStore
+	MatchRecorder      MatchRecorder
 }
 
 // SeriesMatchResult records a completed match in a series.
@@ -44,6 +45,7 @@ type Series struct {
 	seats            []domain.Seat
 	config           MatchConfig
 	configIdentity   MatchConfigIdentity
+	configSnapshot   MatchConfigSnapshot
 	profile          domain.RuleProfile
 	results          []SeriesMatchResult
 	previousLoser    domain.Seat
@@ -65,7 +67,7 @@ func NewSeries(options *SeriesOptions) (*Series, error) {
 	if seatErr := validateSeriesSeats(seats, profile); seatErr != nil {
 		return nil, seatErr
 	}
-	configIdentity, err := config.Identity()
+	configSnapshot, err := NewMatchConfigSnapshot(&config)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidSeries, err)
 	}
@@ -73,7 +75,8 @@ func NewSeries(options *SeriesOptions) (*Series, error) {
 		id:             options.SeriesID,
 		seats:          slices.Clone(seats),
 		config:         config,
-		configIdentity: configIdentity,
+		configIdentity: configSnapshot.Identity,
+		configSnapshot: configSnapshot,
 		profile:        profile,
 	}, nil
 }
@@ -127,9 +130,12 @@ func (s *Series) Results() []SeriesMatchResult {
 }
 
 // StartMatch deals and starts one match in the series.
-func (s *Series) StartMatch(ctx context.Context, options SeriesMatchOptions) (*Session, domain.InitialDeal, error) {
+func (s *Series) StartMatch(ctx context.Context, options *SeriesMatchOptions) (*Session, domain.InitialDeal, error) {
 	if s == nil {
 		return nil, domain.InitialDeal{}, fmt.Errorf("%w: series is nil", ErrInvalidSeries)
+	}
+	if options == nil {
+		return nil, domain.InitialDeal{}, fmt.Errorf("%w: match options are nil", ErrInvalidSeries)
 	}
 	if options.MatchID == "" {
 		return nil, domain.InitialDeal{}, ErrEmptyMatchID
@@ -150,11 +156,14 @@ func (s *Series) StartMatch(ctx context.Context, options SeriesMatchOptions) (*S
 	if err != nil {
 		return nil, domain.InitialDeal{}, err
 	}
-	session, err := NewSessionWithOptions(ctx, match, SessionOptions{
+	session, err := NewSessionWithOptions(ctx, match, &SessionOptions{
 		MatchID:            options.MatchID,
+		SeriesID:           s.id,
 		ConfigIdentity:     &s.configIdentity,
+		ConfigSnapshot:     &s.configSnapshot,
 		EventStore:         options.EventStore,
 		InternalEventStore: options.InternalEventStore,
+		MatchRecorder:      options.MatchRecorder,
 		InitialDeal:        &deal,
 	})
 	if err != nil {

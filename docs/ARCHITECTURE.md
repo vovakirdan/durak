@@ -131,11 +131,13 @@
 - **Responsibility:** durable match history, replay/training data, player profiles, rating state, and currency ledger.
 - **Internal module structure:**
   - JSONL event store for the first local public-history milestone.
-  - SQLite event store for future daemon/history mode.
+  - SQLite event store for indexed history, replay, and future daemon mode.
+  - Bun-backed storage adapter for runtime queries and transactions.
+  - Goose migrations embedded into the binary.
   - snapshot store if replay from full event history becomes expensive.
   - repositories for players, ratings, and currency.
   - migration runner.
-- **Key dependencies:** standard library for JSONL; storage library chosen later for SQLite.
+- **Key dependencies:** standard library for JSONL; Bun, Goose, and SQLite shim for indexed persistence.
 - **Why this boundary exists:** persistence should consume stable events and application commands without owning game rules.
 
 ## 6. Interfaces and Boundaries
@@ -202,7 +204,7 @@
 - **Primary storage responsibilities:**
   - MVP before event-history milestone: no durable storage.
   - First event-history milestone: append public match events to JSONL.
-  - First persistence milestone: append match events to SQLite and store completed match summaries derived from the N-seat-safe history projection.
+  - First persistence milestone: append canonical internal events, public event projections, config snapshots, match metadata, and completed match summaries to SQLite.
   - Later milestones: player profile, rating records, and currency ledger entries.
 - **Transaction boundaries:**
   - JSONL: single-process append with batch validation before write; no cross-record transaction guarantees.
@@ -377,7 +379,7 @@ provider integration.
 
 ## 15. Open Questions / Risks
 
-- **Storage tool choice:** JSONL is accepted only as the first local event-history adapter; choose SQLite driver, query approach, and migration tool when indexed persistence begins.
+- **Storage tool choice:** SQLite storage foundation uses Bun for runtime queries, Goose for migrations, and Bun's SQLite shim/dialect for the first portable implementation.
 - **Event schema evolution:** JSON envelope v1 now exists for public and internal streams; future persistence work must define migration/version handling for SQLite-backed history.
 - **Event-store failure semantics:** current session code keeps events pending when append fails, but durable persistence must explicitly choose retry/blocking, rollback, or command/event transaction behavior before daemon mode relies on it.
 - **Transfer rules:** default preset includes transfer behavior, but implementation can be phased after the base podkidnoy loop if needed.

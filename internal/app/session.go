@@ -31,9 +31,13 @@ type Strategy interface {
 type Session struct {
 	match          *domain.Match
 	matchID        MatchID
+	seriesID       SeriesID
 	configIdentity MatchConfigIdentity
+	configSnapshot *MatchConfigSnapshot
 	eventStore     EventStore
 	internalStore  InternalEventStore
+	matchRecorder  MatchRecorder
+	publicEvents   []Event
 	initialDeal    *domain.InitialDeal
 	nextSequence   uint64
 }
@@ -43,21 +47,27 @@ type Session struct {
 // them as an atomic cross-store transaction.
 type SessionOptions struct {
 	MatchID            MatchID
+	SeriesID           SeriesID
 	ConfigIdentity     *MatchConfigIdentity
+	ConfigSnapshot     *MatchConfigSnapshot
 	EventStore         EventStore
 	InternalEventStore InternalEventStore
+	MatchRecorder      MatchRecorder
 	InitialDeal        *domain.InitialDeal
 }
 
 // NewSession wraps an existing domain match.
 func NewSession(match *domain.Match) (*Session, error) {
-	return NewSessionWithOptions(context.Background(), match, SessionOptions{})
+	return NewSessionWithOptions(context.Background(), match, nil)
 }
 
 // NewSessionWithOptions wraps an existing domain match and emits initial events.
-func NewSessionWithOptions(ctx context.Context, match *domain.Match, options SessionOptions) (*Session, error) {
+func NewSessionWithOptions(ctx context.Context, match *domain.Match, options *SessionOptions) (*Session, error) {
 	if match == nil {
 		return nil, ErrNilMatch
+	}
+	if options == nil {
+		options = &SessionOptions{}
 	}
 	if options.EventStore != nil && options.MatchID == "" {
 		return nil, ErrEmptyMatchID
@@ -68,16 +78,30 @@ func NewSessionWithOptions(ctx context.Context, match *domain.Match, options Ses
 	if options.InternalEventStore != nil && options.InitialDeal == nil {
 		return nil, ErrMissingInitialDeal
 	}
+	if options.MatchRecorder != nil && options.MatchID == "" {
+		return nil, ErrEmptyMatchID
+	}
+	if options.MatchRecorder != nil && options.InitialDeal == nil {
+		return nil, ErrMissingInitialDeal
+	}
+	if options.MatchRecorder != nil && options.ConfigSnapshot == nil {
+		return nil, ErrMissingConfigSnapshot
+	}
 	configIdentity := MatchConfigIdentity{}
-	if options.ConfigIdentity != nil {
+	if options.ConfigSnapshot != nil {
+		configIdentity = options.ConfigSnapshot.Identity
+	} else if options.ConfigIdentity != nil {
 		configIdentity = *options.ConfigIdentity
 	}
 	session := &Session{
 		match:          match,
 		matchID:        options.MatchID,
+		seriesID:       options.SeriesID,
 		configIdentity: configIdentity,
+		configSnapshot: cloneConfigSnapshot(options.ConfigSnapshot),
 		eventStore:     options.EventStore,
 		internalStore:  options.InternalEventStore,
+		matchRecorder:  options.MatchRecorder,
 		initialDeal:    cloneInitialDeal(options.InitialDeal),
 	}
 	if err := session.emitPendingEvents(ctx); err != nil {
@@ -88,7 +112,7 @@ func NewSessionWithOptions(ctx context.Context, match *domain.Match, options Ses
 
 // NewDealtSession creates a match by dealing cards with the provided profile.
 func NewDealtSession(playerCount int, profile domain.RuleProfile, opts domain.DealOptions) (*Session, domain.InitialDeal, error) {
-	return NewDealtSessionWithOptions(context.Background(), playerCount, profile, opts, SessionOptions{})
+	return NewDealtSessionWithOptions(context.Background(), playerCount, profile, opts, nil)
 }
 
 // NewDealtSessionWithOptions creates a match and emits initial events.
@@ -97,7 +121,7 @@ func NewDealtSessionWithOptions(
 	playerCount int,
 	profile domain.RuleProfile,
 	opts domain.DealOptions,
-	sessionOptions SessionOptions,
+	sessionOptions *SessionOptions,
 ) (*Session, domain.InitialDeal, error) {
 	deal, err := domain.DealInitial(playerCount, profile, opts)
 	if err != nil {
@@ -109,8 +133,12 @@ func NewDealtSessionWithOptions(
 		return nil, domain.InitialDeal{}, err
 	}
 
-	sessionOptions.InitialDeal = &deal
-	session, err := NewSessionWithOptions(ctx, match, sessionOptions)
+	options := SessionOptions{}
+	if sessionOptions != nil {
+		options = *sessionOptions
+	}
+	options.InitialDeal = &deal
+	session, err := NewSessionWithOptions(ctx, match, &options)
 	if err != nil {
 		return nil, domain.InitialDeal{}, err
 	}
@@ -206,7 +234,7 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 		return nil
 	}
 	if s.eventStore == nil {
-		if s.internalStore == nil {
+		if s.internalStore == nil && s.matchRecorder == nil {
 			s.match.DrainEvents()
 			return nil
 		}
@@ -220,11 +248,24 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 			Domain:         event,
 		}
 	}
-	if s.internalStore != nil {
-		internalEvents, err := s.internalEvents(events)
+	var internalEvents []InternalEvent
+	if s.internalStore != nil || s.matchRecorder != nil {
+		var err error
+		internalEvents, err = s.internalEvents(events)
 		if err != nil {
 			return err
 		}
+	}
+	if s.matchRecorder != nil {
+		batch, err := s.matchRecordBatch(storedEvents, internalEvents)
+		if err != nil {
+			return err
+		}
+		if err := s.matchRecorder.RecordMatchBatch(ctx, &batch); err != nil {
+			return err
+		}
+	}
+	if s.internalStore != nil {
 		if err := s.internalStore.AppendInternalEvents(ctx, internalEvents); err != nil {
 			return err
 		}
@@ -235,8 +276,47 @@ func (s *Session) emitPendingEvents(ctx context.Context) error {
 		}
 	}
 	s.nextSequence += uint64(len(events))
+	if s.matchRecorder != nil {
+		s.publicEvents = append(s.publicEvents, cloneEvents(storedEvents)...)
+	}
 	s.match.DrainEvents()
 	return nil
+}
+
+func (s *Session) matchRecordBatch(publicEvents []Event, internalEvents []InternalEvent) (MatchRecordBatch, error) {
+	summary, err := s.summaryForBatch(publicEvents)
+	if err != nil {
+		return MatchRecordBatch{}, err
+	}
+	return MatchRecordBatch{
+		MatchID:        s.matchID,
+		SeriesID:       s.seriesID,
+		ConfigSnapshot: s.configSnapshotForBatch(publicEvents),
+		PublicEvents:   cloneEvents(publicEvents),
+		InternalEvents: cloneInternalEvents(internalEvents),
+		Summary:        summary,
+	}, nil
+}
+
+func (s *Session) configSnapshotForBatch(events []Event) *MatchConfigSnapshot {
+	for i := range events {
+		if events[i].Domain.Kind == domain.EventKindMatchStarted {
+			return cloneConfigSnapshot(s.configSnapshot)
+		}
+	}
+	return nil
+}
+
+func (s *Session) summaryForBatch(events []Event) (*MatchSummary, error) {
+	if len(events) == 0 || events[len(events)-1].Domain.Kind != domain.EventKindMatchEnded {
+		return nil, nil
+	}
+	allEvents := append(cloneEvents(s.publicEvents), cloneEvents(events)...)
+	summary, err := BuildMatchSummary(allEvents)
+	if err != nil {
+		return nil, err
+	}
+	return &summary, nil
 }
 
 func (s *Session) internalEvents(events []domain.Event) ([]InternalEvent, error) {

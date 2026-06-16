@@ -144,7 +144,7 @@ func canonicalSeats(count int) []domain.Seat {
 
 func (r *seriesRunner) startMatch(ctx context.Context) (*app.Session, error) {
 	r.matchNumber++
-	session, _, err := r.series.StartMatch(ctx, app.SeriesMatchOptions{
+	session, _, err := r.series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID:    matchIDFor(r.baseMatchID, r.matchNumber),
 		Deal:       r.deal,
 		EventStore: r.eventStore,

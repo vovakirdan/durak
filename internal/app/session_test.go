@@ -132,7 +132,7 @@ func TestSessionWithEventStoreEmitsInitialEvents(t *testing.T) {
 	session, err := app.NewSessionWithOptions(context.Background(), mustMatch(t, [][]domain.Card{
 		{{Rank: domain.Six, Suit: domain.Clubs}},
 		{{Rank: domain.Seven, Suit: domain.Clubs}},
-	}), app.SessionOptions{MatchID: testMatchID, EventStore: store})
+	}), &app.SessionOptions{MatchID: testMatchID, EventStore: store})
 	if err != nil {
 		t.Fatalf("NewSessionWithOptions returned error: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestSessionWithEventStoreRequiresMatchID(t *testing.T) {
 	_, err := app.NewSessionWithOptions(context.Background(), mustMatch(t, [][]domain.Card{
 		{{Rank: domain.Six, Suit: domain.Clubs}},
 		{{Rank: domain.Seven, Suit: domain.Clubs}},
-	}), app.SessionOptions{EventStore: store})
+	}), &app.SessionOptions{EventStore: store})
 	if !errors.Is(err, app.ErrEmptyMatchID) {
 		t.Fatalf("NewSessionWithOptions error = %v, want ErrEmptyMatchID", err)
 	}
@@ -165,7 +165,7 @@ func TestSessionWithEventStoreRequiresMatchID(t *testing.T) {
 func TestSessionWithInternalEventStoreRequiresMatchID(t *testing.T) {
 	store := app.NewInMemoryInternalEventStore()
 	deal := testInitialDeal()
-	_, err := app.NewSessionWithOptions(context.Background(), mustMatchFromDeal(t, deal), app.SessionOptions{
+	_, err := app.NewSessionWithOptions(context.Background(), mustMatchFromDeal(t, deal), &app.SessionOptions{
 		InternalEventStore: store,
 		InitialDeal:        &deal,
 	})
@@ -179,7 +179,7 @@ func TestSessionWithInternalEventStoreRequiresInitialDeal(t *testing.T) {
 	_, err := app.NewSessionWithOptions(context.Background(), mustMatch(t, [][]domain.Card{
 		{{Rank: domain.Six, Suit: domain.Clubs}},
 		{{Rank: domain.Seven, Suit: domain.Clubs}},
-	}), app.SessionOptions{MatchID: testMatchID, InternalEventStore: store})
+	}), &app.SessionOptions{MatchID: testMatchID, InternalEventStore: store})
 	if !errors.Is(err, app.ErrMissingInitialDeal) {
 		t.Fatalf("NewSessionWithOptions error = %v, want ErrMissingInitialDeal", err)
 	}
@@ -380,7 +380,7 @@ func TestNewDealtSessionWithInternalEventStoreEmitsCanonicalDeal(t *testing.T) {
 		Shuffler: domain.ShuffleFunc(func(cards []domain.Card) {
 			copy(cards, deck)
 		}),
-	}, app.SessionOptions{MatchID: testMatchID, InternalEventStore: store})
+	}, &app.SessionOptions{MatchID: testMatchID, InternalEventStore: store})
 	if err != nil {
 		t.Fatalf("NewDealtSessionWithOptions returned error: %v", err)
 	}
@@ -485,7 +485,7 @@ func mustSession(t *testing.T, match *domain.Match) *app.Session {
 
 func mustSessionWithStore(t *testing.T, match *domain.Match, store app.EventStore) *app.Session {
 	t.Helper()
-	session, err := app.NewSessionWithOptions(context.Background(), match, app.SessionOptions{
+	session, err := app.NewSessionWithOptions(context.Background(), match, &app.SessionOptions{
 		MatchID:    testMatchID,
 		EventStore: store,
 	})

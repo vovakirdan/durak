@@ -84,7 +84,7 @@ func replayableInternalStream(t *testing.T) (*app.Session, []app.InternalEvent) 
 		FirstAttacker:  0,
 	}
 	store := app.NewInMemoryInternalEventStore()
-	session, err := app.NewSessionWithOptions(context.Background(), mustMatchFromDeal(t, deal), app.SessionOptions{
+	session, err := app.NewSessionWithOptions(context.Background(), mustMatchFromDeal(t, deal), &app.SessionOptions{
 		MatchID:            testMatchID,
 		InternalEventStore: store,
 		InitialDeal:        &deal,

@@ -14,7 +14,7 @@ func TestSeriesStartsNextMatchBeforePreviousLoser(t *testing.T) {
 	ctx := context.Background()
 	series := mustSeries(t)
 	firstDeck := deckForDeal(seriesHandsOne(), stockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, seriesHandsOne()...))
-	first, _, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+	first, _, err := series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID: "match-1",
 		Deal:    fixedDeck(firstDeck),
 	})
@@ -33,7 +33,7 @@ func TestSeriesStartsNextMatchBeforePreviousLoser(t *testing.T) {
 	internalEvents := app.NewInMemoryInternalEventStore()
 	secondHands := seriesHandsTwo()
 	secondDeck := deckForDeal(secondHands, stockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, secondHands...))
-	second, deal, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+	second, deal, err := series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID:            "match-2",
 		Deal:               fixedDeck(secondDeck),
 		InternalEventStore: internalEvents,
@@ -91,7 +91,7 @@ func TestSeriesStartMatchEmitsConfigIdentity(t *testing.T) {
 	publicEvents := app.NewInMemoryEventStore()
 	internalEvents := app.NewInMemoryInternalEventStore()
 
-	_, _, err = series.StartMatch(ctx, app.SeriesMatchOptions{
+	_, _, err = series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID:            "match-config",
 		EventStore:         publicEvents,
 		InternalEventStore: internalEvents,
@@ -147,7 +147,7 @@ func TestSeriesConfigCanDisablePreviousLoserOverride(t *testing.T) {
 	}
 
 	firstDeck := deckForDeal(seriesHandsOne(), stockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, seriesHandsOne()...))
-	first, _, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+	first, _, err := series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID: "match-1",
 		Deal:    fixedDeck(firstDeck),
 	})
@@ -163,7 +163,7 @@ func TestSeriesConfigCanDisablePreviousLoserOverride(t *testing.T) {
 
 	secondHands := seriesHandsTwo()
 	secondDeck := deckForDeal(secondHands, stockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, secondHands...))
-	_, deal, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+	_, deal, err := series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID: "match-2",
 		Deal:    fixedDeck(secondDeck),
 	})
@@ -239,7 +239,7 @@ func TestThreeSeatSeriesStartsNextMatchBeforePreviousLoser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSeries returned error: %v", err)
 	}
-	first, _, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+	first, _, err := series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID: "match-1",
 		Deal:    domain.SeededDealOptions(42),
 	})
@@ -253,7 +253,7 @@ func TestThreeSeatSeriesStartsNextMatchBeforePreviousLoser(t *testing.T) {
 		t.Fatalf("CompleteMatch returned error: %v", completeErr)
 	}
 
-	second, deal, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+	second, deal, err := series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID: "match-2",
 		Deal:    domain.SeededDealOptions(43),
 	})
@@ -336,7 +336,7 @@ func TestSeriesRejectsCompletedMatchIDReuse(t *testing.T) {
 		t.Fatalf("CompleteMatch duplicate error = %v, want ErrInvalidSeries", err)
 	}
 	hands := seriesHandsOne()
-	_, _, err := series.StartMatch(ctx, app.SeriesMatchOptions{
+	_, _, err := series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID: "match-1",
 		Deal:    fixedDeck(deckForDeal(hands, stockWithBottom(domain.Card{Rank: domain.Nine, Suit: domain.Hearts}, hands...))),
 	})
@@ -362,7 +362,7 @@ func mustSeries(t *testing.T) *app.Series {
 
 func mustSessionWithMatchID(t *testing.T, matchID app.MatchID, match *domain.Match) *app.Session {
 	t.Helper()
-	session, err := app.NewSessionWithOptions(context.Background(), match, app.SessionOptions{MatchID: matchID})
+	session, err := app.NewSessionWithOptions(context.Background(), match, &app.SessionOptions{MatchID: matchID})
 	if err != nil {
 		t.Fatalf("NewSessionWithOptions returned error: %v", err)
 	}
