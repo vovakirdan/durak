@@ -50,6 +50,44 @@ func TestRankActionsAvoidsHighTrumpWhenNonTrumpDefenseWorks(t *testing.T) {
 	}
 }
 
+func TestRankActionsKeepsCheapDefenseCloseToTransfer(t *testing.T) {
+	defend := domain.Action{
+		Kind:        domain.ActionKindDefend,
+		Seat:        domain.Seat(1),
+		Card:        card(domain.Seven, domain.Clubs),
+		AttackIndex: 0,
+	}
+	transfer := domain.Action{
+		Kind: domain.ActionKindTransfer,
+		Seat: domain.Seat(1),
+		Card: card(domain.Six, domain.Diamonds),
+	}
+	decision := app.DecisionContext{
+		SeatView: app.SeatView{
+			Seat:       domain.Seat(1),
+			Phase:      domain.MatchPhaseDefense,
+			Attacker:   domain.Seat(0),
+			Defender:   domain.Seat(1),
+			TrumpSuit:  domain.Hearts,
+			HandSizes:  []int{3, 2},
+			StockCount: 12,
+			Table: []domain.TablePair{
+				{Attack: card(domain.Six, domain.Clubs)},
+			},
+		},
+		Hand:         []domain.Card{defend.Card, transfer.Card},
+		LegalActions: []domain.Action{transfer, defend},
+	}
+
+	results := evaluation.RankActions(&decision, evaluation.BuildHiddenCards(&decision, nil))
+
+	defendResult := actionResult(t, results, defend)
+	if defendResult.Loss > 100 {
+		t.Fatalf("defend loss = %d in results %+v, want close alternative to transfer",
+			defendResult.Loss, results)
+	}
+}
+
 func TestRankActionsPrefersLowNonTrumpAttack(t *testing.T) {
 	low := domain.Action{Kind: domain.ActionKindAttack, Seat: domain.Seat(0), Card: card(domain.Six, domain.Clubs)}
 	high := domain.Action{Kind: domain.ActionKindAttack, Seat: domain.Seat(0), Card: card(domain.Ace, domain.Spades)}
@@ -184,6 +222,29 @@ func TestRankActionsPenalizesTakeWhenDefenseExists(t *testing.T) {
 	}
 	if takeResult.Quality != evaluation.MoveQualityBlunder {
 		t.Fatalf("take quality = %s, want blunder", takeResult.Quality)
+	}
+}
+
+func TestRankActionsKeepsStableActionEvaluationShape(t *testing.T) {
+	defend := domain.Action{
+		Kind:        domain.ActionKindDefend,
+		Seat:        domain.Seat(1),
+		Card:        card(domain.Seven, domain.Clubs),
+		AttackIndex: 0,
+	}
+	take := domain.Action{Kind: domain.ActionKindTake, Seat: domain.Seat(1)}
+	decision := defenseDecision([]domain.Action{take, defend})
+
+	results := evaluation.RankActions(&decision, evaluation.BuildHiddenCards(&decision, nil))
+
+	if len(results) != 2 {
+		t.Fatalf("results = %+v, want two ranked actions", results)
+	}
+	if results[0].Quality == "" {
+		t.Fatalf("top result = %+v, want quality label", results[0])
+	}
+	if results[0].Action == (domain.Action{}) {
+		t.Fatalf("top result = %+v, want action copied", results[0])
 	}
 }
 

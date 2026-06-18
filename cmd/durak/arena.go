@@ -2,9 +2,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -25,6 +28,7 @@ type arenaOptions struct {
 	seed         uint64
 	maxActions   int
 	evaluation   bool
+	evalLogPath  string
 	eventLogPath string
 	dbPath       string
 	baseMatchID  string
@@ -50,19 +54,45 @@ func runArena(ctx context.Context, args []string, out, errOut io.Writer) error {
 		return err
 	}
 	rawAIStats := &arenaRawAIStats{}
-	evaluationStats := newArenaEvaluationStats(options.evaluation)
+	evalLog, err := openArenaEvalLog(options.evalLogPath)
+	if err != nil {
+		return err
+	}
+	var evalWriter io.Writer
+	if evalLog != nil {
+		evalWriter = evalLog
+	}
+	evaluationStats := newArenaEvaluationStats(options.evaluation || evalWriter != nil, evalWriter)
 	aiTraceSink, err := options.aiConfig.openTraceSink()
 	if err != nil {
+		if closeErr := closeArenaEvalLog(evalLog, nil); closeErr != nil {
+			return errors.Join(err, closeErr)
+		}
 		return err
 	}
 	traceSink := ai.CombineTraceSinks(rawAIStats, aiTraceSink)
 	result, err := runArenaMatches(ctx, &options, traceSink, evaluationStats)
-	closeErr := closeAITraceSink(aiTraceSink, err)
-	if closeErr != nil {
-		return closeErr
+	if err != nil {
+		err = fmt.Errorf("run arena matches: %w", err)
+	}
+	if evalErr := evaluationStats.err(); err == nil && evalErr != nil {
+		err = fmt.Errorf("evaluation stats: %w", evalErr)
+	}
+	runErr := err
+	if closeErr := closeAITraceSink(aiTraceSink, runErr); runErr == nil && closeErr != nil {
+		runErr = fmt.Errorf("close ai trace: %w", closeErr)
+	}
+	if closeErr := closeArenaEvalLog(evalLog, runErr); runErr == nil && closeErr != nil {
+		runErr = fmt.Errorf("close eval log: %w", closeErr)
+	}
+	if runErr != nil {
+		return runErr
 	}
 	summary := summarizeArena(result, rawAIStats.summary(), evaluationStats.summary())
-	return writeArenaSummary(out, &options, &summary)
+	if err := writeArenaSummary(out, &options, &summary); err != nil {
+		return fmt.Errorf("write arena summary: %w", err)
+	}
+	return nil
 }
 
 func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
@@ -81,6 +111,7 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 	flags.Uint64Var(&options.seed, "seed", options.seed, "deterministic arena seed")
 	flags.IntVar(&options.maxActions, "max-actions", options.maxActions, "maximum accepted actions per match")
 	flags.BoolVar(&options.evaluation, "eval", options.evaluation, "print heuristic move-quality summary")
+	flags.StringVar(&options.evalLogPath, "eval-log", "", "write per-decision evaluation diagnostics to JSONL")
 	flags.StringVar(&options.eventLogPath, "event-log", "", "append public arena events to a JSONL file")
 	flags.StringVar(&options.dbPath, "db", "", "write durable match history to a SQLite database")
 	flags.StringVar(&options.baseMatchID, "match-id", "", "base match id for stored match streams")
@@ -112,6 +143,30 @@ func parseArenaOptions(args []string, errOut io.Writer) (arenaOptions, error) {
 		}
 	}
 	return options, nil
+}
+
+func openArenaEvalLog(path string) (*os.File, error) {
+	if path == "" {
+		return nil, nil
+	}
+	dir := filepath.Dir(path)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, err
+		}
+	}
+	// #nosec G304 -- eval-log is an explicit user-provided output path.
+	return os.Create(path)
+}
+
+func closeArenaEvalLog(file *os.File, runErr error) error {
+	if file == nil {
+		return runErr
+	}
+	if closeErr := file.Close(); runErr == nil && closeErr != nil {
+		return closeErr
+	}
+	return runErr
 }
 
 func runArenaMatches(

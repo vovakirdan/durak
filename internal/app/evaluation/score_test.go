@@ -26,6 +26,31 @@ func TestClamp(t *testing.T) {
 	}
 }
 
+func TestScoreFromDurakProbability(t *testing.T) {
+	tests := []struct {
+		name          string
+		probability   float64
+		activePlayers int
+		want          evaluation.Score
+	}{
+		{name: "two-player win", probability: 0, activePlayers: 2, want: evaluation.MaxScore},
+		{name: "two-player neutral", probability: 0.5, activePlayers: 2, want: 0},
+		{name: "two-player loss", probability: 1, activePlayers: 2, want: evaluation.MinScore},
+		{name: "six-player neutral", probability: 1.0 / 6.0, activePlayers: 6, want: 0},
+		{name: "single active player already safe", probability: 1, activePlayers: 1, want: evaluation.MaxScore},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := evaluation.ScoreFromDurakProbability(test.probability, test.activePlayers)
+			if got != test.want {
+				t.Fatalf("ScoreFromDurakProbability(%v, %d) = %d, want %d",
+					test.probability, test.activePlayers, got, test.want)
+			}
+		})
+	}
+}
+
 func TestQualityFromLoss(t *testing.T) {
 	tests := []struct {
 		loss evaluation.Score

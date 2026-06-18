@@ -117,6 +117,40 @@ func TestRunArenaPrintsEvaluationSummary(t *testing.T) {
 	}
 }
 
+func TestRunArenaWritesEvaluationLog(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	path := filepath.Join(t.TempDir(), "eval.jsonl")
+
+	err := run(t.Context(), []string{
+		"arena",
+		"-matches", "1",
+		"-seed", "42",
+		"-max-actions", "800",
+		"-eval-log", path,
+		"-p0", "heuristic",
+		"-p1", "simple",
+	}, strings.NewReader(""), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run arena returned error: %v; stderr=%q", err, errOut.String())
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read eval log: %v", err)
+	}
+	for _, want := range []string{
+		`"legal_horizon_class":`,
+		`"risk_score":`,
+		`"top_action":`,
+		`"rank_chosen":`,
+	} {
+		if !strings.Contains(string(data), want) {
+			t.Fatalf("eval log = %q, want %q", data, want)
+		}
+	}
+}
+
 func TestRunArenaCompletesThreeSeatMatches(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer

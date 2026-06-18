@@ -141,7 +141,8 @@ func simpleFallbackController() app.PlayerController {
 
 func validatePlayerControllerKind(kind string) error {
 	switch normalizePlayerControllerKind(kind) {
-	case bot.ControllerSimple, bot.ControllerRandom, bot.ControllerHeuristic, controllerAIRawMock, controllerAIRawExec, controllerAIOpenAI:
+	case bot.ControllerSimple, bot.ControllerRandom, bot.ControllerHeuristic,
+		controllerAIRawMock, controllerAIRawExec, controllerAIOpenAI:
 		return nil
 	default:
 		return fmt.Errorf("%w: %q", errUnknownPlayerController, kind)

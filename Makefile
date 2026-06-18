@@ -31,3 +31,4 @@ run:
 
 .PHONY: check
 check: fmt lint test
+	@echo "Do not forget to call sentrux.scan!"

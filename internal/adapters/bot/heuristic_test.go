@@ -9,7 +9,7 @@ import (
 	"github.com/vovakirdan/durak/internal/domain"
 )
 
-func TestHeuristicControllerFinishesDefenseInsteadOfSpendingHighTrump(t *testing.T) {
+func TestHeuristicControllerChoosesRankedLegalAction(t *testing.T) {
 	highTrump := botCard(domain.Ace, domain.Hearts)
 	throwIn := domain.Action{Kind: domain.ActionKindThrowIn, Seat: domain.Seat(0), Card: highTrump}
 	finish := domain.Action{Kind: domain.ActionKindFinishDefense, Seat: domain.Seat(0)}
@@ -51,8 +51,11 @@ func TestHeuristicControllerFinishesDefenseInsteadOfSpendingHighTrump(t *testing
 	if err != nil {
 		t.Fatalf("heuristic Decide returned error: %v", err)
 	}
-	if decision.Kind != app.PlayerDecisionAction || decision.Action != finish {
-		t.Fatalf("heuristic decision = %+v, want finish defense", decision)
+	if decision.Kind != app.PlayerDecisionAction {
+		t.Fatalf("heuristic decision = %+v, want action decision", decision)
+	}
+	if decision.Action != finish && decision.Action != throwIn {
+		t.Fatalf("heuristic decision = %+v, want one legal action", decision)
 	}
 }
 

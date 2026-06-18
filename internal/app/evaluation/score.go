@@ -1,5 +1,7 @@
 package evaluation
 
+import "math"
+
 // Score is a chess-like positional score from one seat's point of view.
 type Score int
 
@@ -19,6 +21,27 @@ func Clamp(score Score) Score {
 		return MaxScore
 	}
 	return score
+}
+
+// ScoreFromDurakProbability maps a durak-loss probability to the public score
+// scale. The neutral point is 1/N for N active players.
+func ScoreFromDurakProbability(probability float64, activePlayers int) Score {
+	if activePlayers <= 1 {
+		return MaxScore
+	}
+	if probability < 0 {
+		probability = 0
+	}
+	if probability > 1 {
+		probability = 1
+	}
+	neutral := 1 / float64(activePlayers)
+	if probability <= neutral {
+		score := 1000 * (1 - float64(activePlayers)*probability)
+		return Clamp(Score(math.Round(score)))
+	}
+	score := -1000 * (probability - neutral) / (1 - neutral)
+	return Clamp(Score(math.Round(score)))
 }
 
 // MoveQuality labels an action by loss versus the best ranked action.

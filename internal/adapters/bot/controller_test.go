@@ -83,9 +83,23 @@ func TestNewControllerRejectsUnsupportedRandomSeat(t *testing.T) {
 
 func controllerDecision(t *testing.T, controller app.PlayerController, actions []domain.Action) app.PlayerDecision {
 	t.Helper()
+	seatView := app.SeatView{TrumpSuit: domain.Hearts}
+	hand := []domain.Card(nil)
+	for _, action := range actions {
+		if action.Kind == domain.ActionKindDefend {
+			seatView.Seat = action.Seat
+			seatView.Phase = domain.MatchPhaseDefense
+			seatView.Defender = action.Seat
+			seatView.Attacker = domain.Seat(0)
+			seatView.HandSizes = []int{1, 2}
+			seatView.Table = []domain.TablePair{{Attack: domain.Card{Rank: domain.Six, Suit: domain.Clubs}}}
+			hand = append(hand, action.Card)
+		}
+	}
 	decision, err := controller.Decide(context.Background(), &app.TurnContext{
 		DecisionContext: app.DecisionContext{
-			SeatView:     app.SeatView{TrumpSuit: domain.Hearts},
+			SeatView:     seatView,
+			Hand:         hand,
 			LegalActions: actions,
 		},
 	})

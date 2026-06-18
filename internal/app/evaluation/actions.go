@@ -1,7 +1,8 @@
 package evaluation
 
 import (
-	"fmt"
+	"math"
+	"slices"
 	"sort"
 
 	"github.com/vovakirdan/durak/internal/app"
@@ -18,26 +19,24 @@ type ActionEvaluation struct {
 	Features []FeatureContribution
 }
 
-// RankActions scores legal actions without simulating hidden stock draws.
+// RankActions scores legal actions by projected risk after the local battle.
 func RankActions(decision *app.DecisionContext, hidden HiddenCards) []ActionEvaluation {
-	if decision == nil {
-		return nil
-	}
-	if len(decision.LegalActions) == 0 {
+	if decision == nil || len(decision.LegalActions) == 0 {
 		return nil
 	}
 	hidden = ensureHiddenCards(decision, hidden)
 	base := Evaluate(decision, hidden)
 	results := make([]ActionEvaluation, 0, len(decision.LegalActions))
 	for _, action := range decision.LegalActions {
-		features := actionFeatures(action, decision, hidden)
-		rawDelta := sumFeatures(features)
-		score := Clamp(base.Score + rawDelta)
+		score := ScoreAction(decision, hidden, action)
 		results = append(results, ActionEvaluation{
-			Action:   action,
-			Score:    score,
-			Delta:    score - base.Score,
-			Features: features,
+			Action: action,
+			Score:  score,
+			Delta:  score - base.Score,
+			Features: []FeatureContribution{{
+				Name:  FeatureRiskScore,
+				Score: score,
+			}},
 		})
 	}
 	sort.SliceStable(results, func(i, j int) bool {
@@ -51,349 +50,285 @@ func RankActions(decision *app.DecisionContext, hidden HiddenCards) []ActionEval
 	return results
 }
 
-func actionFeatures(
-	action domain.Action,
-	decision *app.DecisionContext,
-	hidden HiddenCards,
-) []FeatureContribution {
-	switch action.Kind {
-	case domain.ActionKindDefend:
-		return defendActionFeatures(action, decision, hidden)
-	case domain.ActionKindTake:
-		return takeActionFeatures(decision)
-	case domain.ActionKindAttack, domain.ActionKindThrowIn:
-		return attackActionFeatures(action, decision, hidden)
-	case domain.ActionKindTransfer:
-		return transferActionFeatures(action, decision)
-	case domain.ActionKindFinishDefense:
-		return finishDefenseActionFeatures(decision)
-	case domain.ActionKindFinishTake:
-		return []FeatureContribution{{
-			Name:   FeatureActionKind,
-			Score:  20,
-			Reason: "finish taking cards",
-		}}
-	case domain.ActionKindPassThrowIn:
-		return passThrowInActionFeatures(decision)
-	default:
-		return []FeatureContribution{{
-			Name:   FeatureActionKind,
-			Score:  -40,
-			Reason: "unknown action kind",
-		}}
-	}
-}
-
-func defendActionFeatures(
-	action domain.Action,
-	decision *app.DecisionContext,
-	hidden HiddenCards,
-) []FeatureContribution {
-	score := Score(140)
-	reason := "beat an attack card"
-	if attack, ok := actionAttackCard(action, decision.Table); ok {
-		if cheapest, found := cheapestLegalDefenseAction(action.AttackIndex, decision); found {
-			if action.Card == cheapest.Card {
-				score += 60
-				reason = "cheapest sufficient defense"
-			} else {
-				score -= Score(cardCost(action.Card, decision.TrumpSuit)-cardCost(cheapest.Card, decision.TrumpSuit)) * 4
-				reason = fmt.Sprintf("more expensive than %v", cheapest.Card)
-			}
-		}
-		if action.Card.Suit == decision.TrumpSuit && attack.Suit != decision.TrumpSuit {
-			score -= 30
-		}
-	}
-	return []FeatureContribution{
-		{Name: FeatureActionKind, Score: 140, Reason: "defend keeps the round alive"},
-		{Name: FeatureActionCardEconomy, Score: score - 140, Reason: reason},
-		defenseSafetyFeature(action, decision, hidden),
-	}
-}
-
-func takeActionFeatures(decision *app.DecisionContext) []FeatureContribution {
-	score := Score(-220)
-	reason := "take table cards"
-	if hasLegalDefense(decision) {
-		score -= 150
-		reason = "taking despite a legal defense"
-	}
-	score -= Score(len(decision.Table)) * 20
-	return []FeatureContribution{{Name: FeatureActionKind, Score: score, Reason: reason}}
-}
-
-func attackActionFeatures(
-	action domain.Action,
-	decision *app.DecisionContext,
-	hidden HiddenCards,
-) []FeatureContribution {
-	kindScore := Score(80)
-	if action.Kind == domain.ActionKindThrowIn {
-		kindScore = 105
-	}
-	economy := lowCardEconomy(action.Card, decision.TrumpSuit)
-	features := []FeatureContribution{
-		{Name: FeatureActionKind, Score: kindScore, Reason: "shed an attacking card"},
-		{Name: FeatureActionCardEconomy, Score: economy, Reason: "prefer low non-trumps"},
-	}
-	if action.Kind == domain.ActionKindThrowIn {
-		features = append(features, throwInPressureFeature(action, decision, hidden))
-	} else {
-		features = append(
-			features,
-			attackPressureFeature(action, decision, hidden),
-			rankMultiplicityFeature(action, decision),
-		)
-	}
-	return features
-}
-
-func transferActionFeatures(action domain.Action, decision *app.DecisionContext) []FeatureContribution {
-	return []FeatureContribution{
-		{Name: FeatureActionKind, Score: 95, Reason: "transfer pressure to another seat"},
-		{Name: FeatureActionCardEconomy, Score: lowCardEconomy(action.Card, decision.TrumpSuit), Reason: "prefer cheap transfers"},
-	}
-}
-
-func passThrowInActionFeatures(decision *app.DecisionContext) []FeatureContribution {
-	score := Score(-15)
-	reason := "decline optional throw-in"
-	if !hasLegalAttackAction(decision) {
-		score = 15
-		reason = "nothing useful to throw in"
-	}
-	return []FeatureContribution{{Name: FeatureActionKind, Score: score, Reason: reason}}
-}
-
-func finishDefenseActionFeatures(decision *app.DecisionContext) []FeatureContribution {
-	score := Score(80)
-	reason := "finish a successful defense"
-	if hasLegalThrowInAction(decision) {
-		score -= 35
-		reason = "end pressure while throw-in is available"
-		if decision.StockCount <= 3 {
-			score -= 25
-			reason = "end late pressure while throw-in is available"
-		}
-	}
-	return []FeatureContribution{{Name: FeatureActionKind, Score: score, Reason: reason}}
-}
-
-func throwInPressureFeature(
-	action domain.Action,
-	decision *app.DecisionContext,
-	hidden HiddenCards,
-) FeatureContribution {
-	score := Score(85)
-	reason := "continue throw-in pressure"
-	if decision.Phase == domain.MatchPhaseTaking {
-		score = 190
-		reason = "add cards to defender taking"
-	}
-	if decision.StockCount == 0 {
-		score += 55
-		reason += " with empty stock"
-	} else if decision.StockCount <= 3 {
-		score += 30
-		reason += " in late stock"
-	}
-	score += Score(len(decision.Table)) * 12
-	if rankCount(decision.Hand, action.Card.Rank) > 1 {
-		score += 25
-		reason += " using rank group"
-	}
-	if knownDefenderCanBeat(action.Card, decision, hidden) {
-		score -= 70
-		reason += " but known defender card can cover"
-	}
-	if action.Card.Suit == decision.TrumpSuit && decision.StockCount > 3 {
-		score -= 60
-		reason += " while spending trump early"
-	}
-	return FeatureContribution{Name: FeatureActionPressure, Score: score, Reason: reason}
-}
-
-func attackPressureFeature(
-	action domain.Action,
-	decision *app.DecisionContext,
-	hidden HiddenCards,
-) FeatureContribution {
-	if !validCard(action.Card) {
-		return FeatureContribution{Name: FeatureActionPressure}
-	}
-	score := Score(0)
-	reason := "attack pressure"
-	if knownDefenderCanBeat(action.Card, decision, hidden) {
-		score -= 35
-		reason = "known defender card can cover"
-	} else if knownDefenderHandSize(decision.Defender, hidden) > 0 {
-		score += 55
-		reason = "attack known weak defender cards"
-	}
-	return FeatureContribution{Name: FeatureActionPressure, Score: score, Reason: reason}
-}
-
-func rankMultiplicityFeature(action domain.Action, decision *app.DecisionContext) FeatureContribution {
-	count := rankCount(decision.Hand, action.Card.Rank)
-	if count <= 1 {
-		return FeatureContribution{Name: FeatureActionPressure}
-	}
-	weight := Score(20)
-	reason := "attack rank keeps same-rank follow-up"
-	return FeatureContribution{
-		Name:   FeatureActionPressure,
-		Score:  Score(count-1) * weight,
-		Reason: reason,
-	}
-}
-
-func knownDefenderHandSize(defender domain.Seat, hidden HiddenCards) int {
-	groups := hidden.knownHeldGroups()
-	if defender == domain.NoSeat || int(defender) < 0 || int(defender) >= len(groups) {
+// ScoreAction projects one legal action and scores the resulting fair position.
+func ScoreAction(decision *app.DecisionContext, hidden HiddenCards, action domain.Action) Score {
+	if decision == nil {
 		return 0
 	}
-	return len(groups[int(defender)])
+	hidden = ensureHiddenCards(decision, hidden)
+	switch action.Kind {
+	case domain.ActionKindAttack, domain.ActionKindThrowIn:
+		return scoreAttackLikeAction(decision, hidden, action)
+	default:
+		projected := projectAction(decision, action)
+		score := Evaluate(&projected, BuildHiddenCards(&projected, nil)).Score
+		return Clamp(score - actionResourcePenalty(decision, action))
+	}
 }
 
-func defenseSafetyFeature(
-	action domain.Action,
-	decision *app.DecisionContext,
-	hidden HiddenCards,
-) FeatureContribution {
-	tableRanks := tableRanksAfterDefense(action, decision)
-	knownThreats := 0
-	for seat, cards := range hidden.knownHeldGroups() {
-		if domain.Seat(seat) == decision.Seat {
+func scoreAttackLikeAction(decision *app.DecisionContext, hidden HiddenCards, action domain.Action) Score {
+	added := projectAction(decision, action)
+	if decision.Phase == domain.MatchPhaseTaking {
+		taken := added
+		projectFinishTake(&taken)
+		return Clamp(Evaluate(&taken, BuildHiddenCards(&taken, nil)).Score - actionResourcePenalty(decision, action))
+	}
+	pending := pendingAttacks(added.Table)
+	if len(pending) == 0 {
+		return Evaluate(&added, BuildHiddenCards(&added, nil)).Score
+	}
+	beat := added
+	for index := range beat.Table {
+		if !beat.Table[index].Defended {
+			beat.Table[index].Defended = true
+		}
+	}
+	changeHandSize(&beat, beat.Defender, -len(pending))
+	beat.Phase = domain.MatchPhaseThrowIn
+	take := added
+	projectFinishTake(&take)
+	pCover := CoverProbability(
+		pending,
+		added.Defender,
+		visibleHandSize(&added, added.Defender, 0),
+		added.TrumpSuit,
+		hidden,
+	)
+	beatScore := float64(Evaluate(&beat, BuildHiddenCards(&beat, nil)).Score)
+	takeScore := float64(Evaluate(&take, BuildHiddenCards(&take, nil)).Score)
+	score := Score(math.Round(pCover*beatScore + (1-pCover)*takeScore))
+	return Clamp(score - actionResourcePenalty(decision, action))
+}
+
+func actionResourcePenalty(decision *app.DecisionContext, action domain.Action) Score {
+	switch action.Kind {
+	case domain.ActionKindAttack, domain.ActionKindThrowIn:
+		penalty := cardStickiness(action.Card, decision.TrumpSuit, stockFinality(decision, 0.10)) * 115
+		if action.Card.Suit == decision.TrumpSuit {
+			penalty += 160
+		}
+		return Score(math.Round(penalty))
+	case domain.ActionKindDefend:
+		return Score(math.Round(defenseSpendCost(action.Card, decision) * 55))
+	case domain.ActionKindTransfer:
+		return Score(math.Round((defenseSpendCost(action.Card, decision) + transferRiskCost(decision, action.Card)) * 180))
+	case domain.ActionKindTake:
+		risk := EvaluateBattleRisk(decision, BuildHiddenCards(decision, nil))
+		if risk.Best < risk.TakeNow {
+			return Score(math.Round(90 + (risk.TakeNow-risk.Best)*360))
+		}
+		return 0
+	default:
+		return 0
+	}
+}
+
+func projectAction(decision *app.DecisionContext, action domain.Action) app.DecisionContext {
+	projected := cloneDecisionForAction(decision)
+	switch action.Kind {
+	case domain.ActionKindAttack:
+		removeProjectedCard(&projected, action.Seat, action.Card)
+		projected.Table = append(projected.Table, domain.TablePair{Attack: action.Card})
+		projected.Attacker = action.Seat
+		projected.Phase = domain.MatchPhaseDefense
+	case domain.ActionKindThrowIn:
+		removeProjectedCard(&projected, action.Seat, action.Card)
+		projected.Table = append(projected.Table, domain.TablePair{Attack: action.Card})
+		if projected.Phase == domain.MatchPhaseThrowIn {
+			projected.Phase = domain.MatchPhaseDefense
+		}
+	case domain.ActionKindDefend:
+		removeProjectedCard(&projected, action.Seat, action.Card)
+		if action.AttackIndex >= 0 && action.AttackIndex < len(projected.Table) {
+			projected.Table[action.AttackIndex].Defense = action.Card
+			projected.Table[action.AttackIndex].Defended = true
+		}
+		if allProjectedAttacksDefended(projected.Table) {
+			projected.Phase = domain.MatchPhaseThrowIn
+		}
+	case domain.ActionKindTransfer:
+		removeProjectedCard(&projected, action.Seat, action.Card)
+		projected.Table = append(projected.Table, domain.TablePair{Attack: action.Card})
+		projected.Attacker = action.Seat
+		projected.Defender = nextProjectedSeat(&projected, action.Seat)
+		projected.Phase = domain.MatchPhaseDefense
+	case domain.ActionKindTake, domain.ActionKindFinishTake:
+		projectFinishTake(&projected)
+	case domain.ActionKindFinishDefense:
+		projectFinishDefense(&projected)
+	case domain.ActionKindPassThrowIn:
+	}
+	return projected
+}
+
+func cloneDecisionForAction(decision *app.DecisionContext) app.DecisionContext {
+	if decision == nil {
+		return app.DecisionContext{}
+	}
+	projected := *decision
+	projected.Table = slices.Clone(decision.Table)
+	projected.Hand = slices.Clone(decision.Hand)
+	projected.HandSizes = slices.Clone(decision.HandSizes)
+	projected.LegalActions = nil
+	projected.PublicMemory = app.PublicCardMemory{}
+	return projected
+}
+
+func projectFinishDefense(projected *app.DecisionContext) {
+	oldDefender := projected.Defender
+	projected.DiscardCount += len(tableCardsForRisk(projected.Table))
+	projected.Table = nil
+	projectRefill(projected, projected.Attacker, oldDefender)
+	if completeProjectedIfFinished(projected) {
+		return
+	}
+	projected.Attacker = activeProjectedSeatFrom(projected, oldDefender)
+	projected.Defender = nextProjectedSeat(projected, projected.Attacker)
+	projected.Phase = domain.MatchPhaseAttack
+}
+
+func projectFinishTake(projected *app.DecisionContext) {
+	oldDefender := projected.Defender
+	cards := tableCardsForRisk(projected.Table)
+	changeHandSize(projected, oldDefender, len(cards))
+	if projected.Seat == oldDefender {
+		projected.Hand = append(projected.Hand, cards...)
+	}
+	projected.Table = nil
+	projectRefill(projected, projected.Attacker, oldDefender)
+	if completeProjectedIfFinished(projected) {
+		return
+	}
+	start := nextProjectedSeat(projected, oldDefender)
+	projected.Attacker = activeProjectedSeatFrom(projected, start)
+	projected.Defender = nextProjectedSeat(projected, projected.Attacker)
+	projected.Phase = domain.MatchPhaseAttack
+}
+
+func projectRefill(projected *app.DecisionContext, order ...domain.Seat) {
+	seen := make(map[domain.Seat]bool, len(order))
+	for _, seat := range order {
+		if seen[seat] || !validProjectedSeat(projected, seat) {
 			continue
 		}
-		for _, card := range cards {
-			if tableRanks[card.Rank] {
-				knownThreats++
-			}
+		seen[seat] = true
+		need := 6 - projected.HandSizes[int(seat)]
+		if need <= 0 {
+			continue
 		}
-	}
-	if knownThreats == 0 {
-		return FeatureContribution{Name: FeatureActionDefenseSafety}
-	}
-	return FeatureContribution{
-		Name:   FeatureActionDefenseSafety,
-		Score:  -Score(knownThreats) * 45,
-		Reason: fmt.Sprintf("%d known opponent throw-in cards after defense", knownThreats),
+		drawn := min(need, projected.StockCount)
+		projected.HandSizes[int(seat)] += drawn
+		projected.StockCount -= drawn
+		if projected.Seat == seat {
+			projected.Hand = append(projected.Hand, make([]domain.Card, drawn)...)
+		}
 	}
 }
 
-func tableRanksAfterDefense(action domain.Action, decision *app.DecisionContext) map[domain.Rank]bool {
-	ranks := make(map[domain.Rank]bool, len(decision.Table)*2+1)
-	for index, pair := range decision.Table {
-		if validCard(pair.Attack) {
-			ranks[pair.Attack.Rank] = true
-		}
-		if pair.Defended && validCard(pair.Defense) {
-			ranks[pair.Defense.Rank] = true
-		}
-		if index == action.AttackIndex && validCard(action.Card) {
-			ranks[action.Card.Rank] = true
-		}
+func removeProjectedCard(projected *app.DecisionContext, seat domain.Seat, card domain.Card) {
+	changeHandSize(projected, seat, -1)
+	if projected.Seat != seat {
+		return
 	}
-	return ranks
+	index := slices.Index(projected.Hand, card)
+	if index >= 0 {
+		projected.Hand = slices.Delete(projected.Hand, index, index+1)
+	}
 }
 
-func knownDefenderCanBeat(card domain.Card, decision *app.DecisionContext, hidden HiddenCards) bool {
-	defender := decision.Defender
-	groups := hidden.knownHeldGroups()
-	if defender == domain.NoSeat || int(defender) < 0 || int(defender) >= len(groups) {
+func changeHandSize(projected *app.DecisionContext, seat domain.Seat, delta int) {
+	if !validProjectedSeat(projected, seat) {
+		return
+	}
+	next := projected.HandSizes[int(seat)] + delta
+	if next < 0 {
+		next = 0
+	}
+	projected.HandSizes[int(seat)] = next
+}
+
+func completeProjectedIfFinished(projected *app.DecisionContext) bool {
+	if projected.StockCount > 0 || len(projected.Table) > 0 {
 		return false
 	}
-	for _, candidate := range groups[int(defender)] {
-		if domain.CanBeat(card, candidate, decision.TrumpSuit) {
-			return true
+	active := make([]domain.Seat, 0, len(projected.HandSizes))
+	for seat, size := range projected.HandSizes {
+		if size > 0 {
+			active = append(active, domain.Seat(seat))
 		}
 	}
-	return false
+	if len(active) > 1 {
+		return false
+	}
+	projected.Phase = domain.MatchPhaseComplete
+	projected.Attacker = domain.NoSeat
+	projected.Defender = domain.NoSeat
+	if len(active) == 1 {
+		projected.Loser = active[0]
+		projected.Winner = firstProjectedEmptySeat(projected)
+	}
+	return true
 }
 
-func lowCardEconomy(card domain.Card, trumpSuit domain.Suit) Score {
-	if !validCard(card) {
-		return 0
+func allProjectedAttacksDefended(table []domain.TablePair) bool {
+	if len(table) == 0 {
+		return false
 	}
-	score := Score(domain.Ace-card.Rank) * 6
-	if card.Suit == trumpSuit {
-		score -= 90
-	}
-	if card.Rank >= domain.Queen {
-		score -= 25
-	}
-	return score
-}
-
-func hasLegalDefense(decision *app.DecisionContext) bool {
-	for _, action := range decision.LegalActions {
-		if action.Kind == domain.ActionKindDefend {
-			return true
+	for _, pair := range table {
+		if !pair.Defended {
+			return false
 		}
 	}
-	return false
+	return true
 }
 
-func hasLegalAttackAction(decision *app.DecisionContext) bool {
-	for _, action := range decision.LegalActions {
-		switch action.Kind {
-		case domain.ActionKindAttack, domain.ActionKindThrowIn, domain.ActionKindTransfer:
-			return true
+func nextProjectedSeat(projected *app.DecisionContext, seat domain.Seat) domain.Seat {
+	if len(projected.HandSizes) < 2 {
+		return domain.NoSeat
+	}
+	start := int(seat)
+	for offset := 1; offset <= len(projected.HandSizes); offset++ {
+		next := domain.Seat((start + offset) % len(projected.HandSizes))
+		if activeProjectedSeat(projected, next) {
+			return next
 		}
 	}
-	return false
+	return domain.NoSeat
 }
 
-func hasLegalThrowInAction(decision *app.DecisionContext) bool {
-	for _, action := range decision.LegalActions {
-		if action.Kind == domain.ActionKindThrowIn {
-			return true
+func activeProjectedSeatFrom(projected *app.DecisionContext, start domain.Seat) domain.Seat {
+	if len(projected.HandSizes) == 0 {
+		return domain.NoSeat
+	}
+	startIndex := int(start)
+	if startIndex < 0 {
+		startIndex = 0
+	}
+	for offset := range projected.HandSizes {
+		seat := domain.Seat((startIndex + offset) % len(projected.HandSizes))
+		if activeProjectedSeat(projected, seat) {
+			return seat
 		}
 	}
-	return false
+	return domain.NoSeat
 }
 
-func rankCount(cards []domain.Card, rank domain.Rank) int {
-	count := 0
-	for _, card := range cards {
-		if card.Rank == rank {
-			count++
+func activeProjectedSeat(projected *app.DecisionContext, seat domain.Seat) bool {
+	if !validProjectedSeat(projected, seat) {
+		return false
+	}
+	return projected.StockCount > 0 || len(projected.Table) > 0 || projected.HandSizes[int(seat)] > 0
+}
+
+func validProjectedSeat(projected *app.DecisionContext, seat domain.Seat) bool {
+	return seat != domain.NoSeat && int(seat) >= 0 && int(seat) < len(projected.HandSizes)
+}
+
+func firstProjectedEmptySeat(projected *app.DecisionContext) domain.Seat {
+	for seat, size := range projected.HandSizes {
+		if size == 0 {
+			return domain.Seat(seat)
 		}
 	}
-	return count
-}
-
-func cheapestLegalDefenseAction(
-	attackIndex int,
-	decision *app.DecisionContext,
-) (domain.Action, bool) {
-	var best domain.Action
-	found := false
-	for _, candidate := range decision.LegalActions {
-		if candidate.Kind != domain.ActionKindDefend || candidate.AttackIndex != attackIndex {
-			continue
-		}
-		if !found || cardCost(candidate.Card, decision.TrumpSuit) < cardCost(best.Card, decision.TrumpSuit) {
-			best = candidate
-			found = true
-		}
-	}
-	return best, found
-}
-
-func actionAttackCard(action domain.Action, table []domain.TablePair) (domain.Card, bool) {
-	if action.AttackIndex < 0 || action.AttackIndex >= len(table) {
-		return domain.Card{}, false
-	}
-	return table[action.AttackIndex].Attack, true
-}
-
-func sumFeatures(features []FeatureContribution) Score {
-	var score Score
-	for _, feature := range features {
-		score += feature.Score
-	}
-	return score
+	return domain.NoSeat
 }

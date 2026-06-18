@@ -61,7 +61,7 @@ go run ./cmd/durak -seed 42 -seats 4 -human-seat 0 \
 
 Available player controllers for the opponent are `simple`, `random`,
 `heuristic`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The heuristic bot
-uses the first seat-view position evaluator and action ranking layer. The AI
+uses the risk-based seat-view evaluator and action ranking layer. The AI
 mock is a deterministic local tester that returns raw text commands through the
 shared parser.
 `ai-openai` calls an OpenAI-compatible `/chat/completions` endpoint directly
@@ -164,6 +164,12 @@ Print a heuristic move-quality summary for arena decisions with:
 
 ```sh
 go run ./cmd/durak arena -matches 100 -seed 42 -eval -p0 heuristic -p1 simple
+```
+
+Write per-decision evaluator diagnostics to JSONL with:
+
+```sh
+go run ./cmd/durak arena -matches 100 -seed 42 -eval-log .cache/eval.jsonl -p0 heuristic -p1 simple
 ```
 
 Run a multi-seat arena smoke with:
