@@ -37,6 +37,17 @@ func encodeAction(action domain.Action) (actionPayload, error) {
 		Seat:        int(action.Seat),
 		AttackIndex: action.AttackIndex,
 	}
+	if action.Kind == domain.ActionKindAttack {
+		cards := action.AttackCards()
+		if len(cards) > 1 {
+			encoded, err := encodeCards(cards)
+			if err != nil {
+				return actionPayload{}, err
+			}
+			payload.Cards = encoded
+			return payload, nil
+		}
+	}
 	if actionHasCard(action.Kind) {
 		card, err := encodeCard(action.Card)
 		if err != nil {
@@ -56,6 +67,13 @@ func decodeAction(payload actionPayload) (domain.Action, error) {
 		Kind:        kind,
 		Seat:        domain.Seat(payload.Seat),
 		AttackIndex: payload.AttackIndex,
+	}
+	if kind == domain.ActionKindAttack && len(payload.Cards) > 0 {
+		cards, err := decodeCards(payload.Cards)
+		if err != nil {
+			return domain.Action{}, err
+		}
+		return domain.NewAttackAction(action.Seat, cards...), nil
 	}
 	if actionHasCard(kind) {
 		if payload.Card == nil {

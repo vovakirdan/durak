@@ -25,13 +25,12 @@ const (
 
 // RiskWeights are Excel-tunable coefficients measured in bad-card units.
 type RiskWeights struct {
-	Beta              float64
-	StockFinalityBase float64
-	HandBurden        float64
-	Threat            float64
-	Outlet            float64
-	DefenseStability  float64
-	Initiative        float64
+	Beta             float64
+	HandBurden       float64
+	BattleRisk       float64
+	Outlet           float64
+	DefenseStability float64
+	Initiative       float64
 }
 
 // RiskModel scores seats by estimating who is most likely to remain durak.
@@ -39,16 +38,28 @@ type RiskModel struct {
 	Weights RiskWeights
 }
 
-// DefaultRiskModel returns conservative first-pass weights.
+// RiskComponents exposes the model terms for traces and parity tests.
+type RiskComponents struct {
+	Seat             domain.Seat
+	HandBurden       float64
+	BattleRisk       float64
+	Outlet           float64
+	DefenseStability float64
+	Initiative       float64
+	RiskIndex        float64
+	DurakProbability float64
+	Score            Score
+}
+
+// DefaultRiskModel returns the spreadsheet-aligned v0.1 model.
 func DefaultRiskModel() RiskModel {
 	return RiskModel{Weights: RiskWeights{
-		Beta:              0.55,
-		StockFinalityBase: 0.10,
-		HandBurden:        1.00,
-		Threat:            1.00,
-		Outlet:            0.35,
-		DefenseStability:  0.30,
-		Initiative:        0.45,
+		Beta:             0.30,
+		HandBurden:       1.00,
+		BattleRisk:       1.20,
+		Outlet:           0.80,
+		DefenseStability: 0.90,
+		Initiative:       0.50,
 	}}
 }
 
@@ -64,93 +75,234 @@ func (m RiskModel) Evaluate(decision *app.DecisionContext, hidden HiddenCards) P
 	if decision.Phase == domain.MatchPhaseComplete {
 		return terminalRiskEvaluation(decision)
 	}
-	risks := m.riskIndices(decision, hidden)
+	components := m.Components(decision, hidden)
 	seat := int(decision.Seat)
-	if seat < 0 || seat >= len(risks) {
+	if seat < 0 || seat >= len(components) {
 		return NewPositionEvaluation(decision.Seat, hiddenConfidence(hidden))
 	}
-	probability := softmaxProbability(risks, seat, m.Weights.Beta)
-	score := ScoreFromDurakProbability(probability, activeRiskSeats(decision))
-	self := m.seatTerms(decision, hidden, decision.Seat)
+	self := components[seat]
 	return PositionEvaluation{
 		Seat:       decision.Seat,
-		Score:      score,
+		Score:      self.Score,
 		Confidence: hiddenConfidence(hidden),
 		Features: []FeatureContribution{
-			{Name: FeatureRiskScore, Score: score, Reason: fmt.Sprintf("durak probability %.3f", probability)},
-			{Name: FeatureRiskHandBurden, Score: riskTermScore(-self.handBurden), Reason: "effective hand burden"},
-			{Name: FeatureRiskOutlet, Score: riskTermScore(self.outlet), Reason: "near-term card outlet"},
-			{Name: FeatureRiskDefense, Score: riskTermScore(self.defenseStability), Reason: "cheap defense stability"},
-			{Name: FeatureRiskInitiative, Score: riskTermScore(self.initiative), Reason: "role and initiative"},
-			{Name: FeatureRiskBattleThreat, Score: riskTermScore(-self.battleThreat), Reason: "current battle threat"},
+			{Name: FeatureRiskScore, Score: self.Score, Reason: fmt.Sprintf("durak probability %.3f", self.DurakProbability)},
+			{Name: FeatureRiskHandBurden, Score: riskTermScore(-self.HandBurden), Reason: "effective hand burden"},
+			{Name: FeatureRiskOutlet, Score: riskTermScore(self.Outlet), Reason: "near-term card outlet"},
+			{Name: FeatureRiskDefense, Score: riskTermScore(self.DefenseStability), Reason: "defense stability"},
+			{Name: FeatureRiskInitiative, Score: riskTermScore(self.Initiative), Reason: "role and initiative"},
+			{Name: FeatureRiskBattleThreat, Score: riskTermScore(-self.BattleRisk), Reason: "current battle risk"},
 		},
 	}
 }
 
-type riskTerms struct {
-	handBurden       float64
-	battleThreat     float64
-	outlet           float64
-	defenseStability float64
-	initiative       float64
-}
-
-func (m RiskModel) riskIndices(decision *app.DecisionContext, hidden HiddenCards) []float64 {
-	risks := make([]float64, len(decision.HandSizes))
-	for seat := range risks {
-		terms := m.seatTerms(decision, hidden, domain.Seat(seat))
-		risks[seat] = m.Weights.HandBurden*terms.handBurden +
-			m.Weights.Threat*terms.battleThreat -
-			m.Weights.Outlet*terms.outlet -
-			m.Weights.DefenseStability*terms.defenseStability -
-			m.Weights.Initiative*terms.initiative
+// Components returns every seat's model terms under the current belief.
+func (m RiskModel) Components(decision *app.DecisionContext, hidden HiddenCards) []RiskComponents {
+	if decision == nil {
+		return nil
 	}
-	return risks
+	if m.Weights == (RiskWeights{}) {
+		m = DefaultRiskModel()
+	}
+	hidden = ensureHiddenCards(decision, hidden)
+	components := make([]RiskComponents, len(decision.HandSizes))
+	risks := make([]float64, len(decision.HandSizes))
+	for seat := range components {
+		seatID := domain.Seat(seat)
+		terms := m.seatTerms(decision, hidden, seatID)
+		risk := m.Weights.HandBurden*terms.HandBurden +
+			m.Weights.BattleRisk*terms.BattleRisk -
+			m.Weights.Outlet*terms.Outlet -
+			m.Weights.DefenseStability*terms.DefenseStability -
+			m.Weights.Initiative*terms.Initiative
+		terms.Seat = seatID
+		terms.RiskIndex = risk
+		components[seat] = terms
+		risks[seat] = risk
+	}
+	active := activeRiskSeats(decision)
+	for seat := range components {
+		probability := softmaxProbability(risks, seat, m.Weights.Beta)
+		components[seat].DurakProbability = probability
+		components[seat].Score = ScoreFromDurakProbability(probability, active)
+	}
+	return components
 }
 
-func (m RiskModel) seatTerms(decision *app.DecisionContext, hidden HiddenCards, seat domain.Seat) riskTerms {
+func (m RiskModel) seatTerms(decision *app.DecisionContext, hidden HiddenCards, seat domain.Seat) RiskComponents {
 	hand := knownSeatHand(decision, hidden, seat)
 	size := visibleHandSize(decision, seat, len(hand))
-	return riskTerms{
-		handBurden:       m.handBurden(decision, hand, size),
-		battleThreat:     currentBattleThreat(decision, hidden, seat),
-		outlet:           outletPotential(decision, hand, seat),
-		defenseStability: defenseStability(decision, hand),
-		initiative:       initiativeValue(decision, seat),
+	return RiskComponents{
+		HandBurden:       m.handBurden(decision, hidden, seat, hand, size),
+		BattleRisk:       m.currentBattleRisk(decision, hidden, seat),
+		Outlet:           m.outletPotential(decision, hidden, seat, hand, size),
+		DefenseStability: m.defenseStability(decision, hidden, hand, size),
+		Initiative:       m.initiativeValue(decision, seat),
 	}
 }
 
-func (m RiskModel) handBurden(decision *app.DecisionContext, hand []domain.Card, size int) float64 {
-	finality := stockFinality(decision, m.Weights.StockFinalityBase)
-	if len(hand) == 0 {
-		overload := max(0, size-6)
-		return (1-finality)*float64(overload) + finality*float64(size)
-	}
-	var sticky float64
+func (m RiskModel) handBurden(
+	decision *app.DecisionContext,
+	hidden HiddenCards,
+	seat domain.Seat,
+	hand []domain.Card,
+	size int,
+) float64 {
+	sticky := 0.0
 	for _, card := range hand {
-		sticky += cardStickiness(card, decision.TrumpSuit, finality)
+		sticky += cardStickinessForSeat(card, decision, seat, hand)
 	}
-	overload := max(0, size-6)
-	return (1-finality)*float64(overload) + finality*sticky
+	unknownSlots := max(0, size-len(hand))
+	if unknownSlots > 0 {
+		sticky += float64(unknownSlots) * expectedStickiness(decision, hidden, seat, hand)
+	}
+	return phaseWeight(decision) * sticky
 }
 
-func stockFinality(decision *app.DecisionContext, base float64) float64 {
-	players := activeRiskSeats(decision)
-	if players <= 0 {
+func cardStickinessForSeat(
+	card domain.Card,
+	decision *app.DecisionContext,
+	seat domain.Seat,
+	hand []domain.Card,
+) float64 {
+	if !validCard(card) {
 		return 1
 	}
-	refillWindow := float64(players * 6)
-	finality := 1 - float64(decision.StockCount)/refillWindow
-	if finality < 0 {
-		finality = 0
+	e := endgameFactor(decision)
+	if card.Suit == decision.TrumpSuit {
+		return 1 - (0.15*(1-e) + 0.5*e)
 	}
-	if finality > 1 {
-		finality = 1
+	out := float64(8-rankValue(card)) / 8
+	if seat == decision.Attacker {
+		out *= 1.2
+	} else {
+		out *= 0.6
 	}
-	if finality < base {
-		return base
+	if rankCount(hand, card.Rank) >= 2 {
+		out += 0.25
 	}
-	return finality
+	if rankOnProjectedTable(decision.Table, card.Rank) {
+		out += 0.30
+	}
+	return 1 - math.Min(1, out)
+}
+
+func expectedStickiness(
+	decision *app.DecisionContext,
+	hidden HiddenCards,
+	seat domain.Seat,
+	known []domain.Card,
+) float64 {
+	if len(hidden.UnknownPool) == 0 {
+		return 1
+	}
+	total := 0.0
+	for _, card := range hidden.UnknownPool {
+		total += cardStickinessForSeat(card, decision, seat, append(known, card))
+	}
+	return total / float64(len(hidden.UnknownPool))
+}
+
+func (m RiskModel) currentBattleRisk(decision *app.DecisionContext, hidden HiddenCards, seat domain.Seat) float64 {
+	if seat == decision.Defender &&
+		(decision.Phase == domain.MatchPhaseDefense || decision.Phase == domain.MatchPhaseTaking) {
+		risk := EvaluateBattleRiskForSeat(decision, hidden, seat)
+		return risk.Best + risk.TablePressure*0.3
+	}
+	if seat != decision.Attacker && seat != decision.Defender && activeProjectedSeatLike(decision, seat) {
+		return 0.5
+	}
+	return 0
+}
+
+func (m RiskModel) outletPotential(
+	decision *app.DecisionContext,
+	hidden HiddenCards,
+	seat domain.Seat,
+	hand []domain.Card,
+	size int,
+) float64 {
+	outlet := 0.0
+	if seat == decision.Attacker {
+		outlet += expectedCardCount(hidden, hand, size, func(card domain.Card) bool {
+			return card.Suit != decision.TrumpSuit && rankValue(card) < 5
+		})
+	}
+	outlet += float64(rankPairs(hand)) * 0.5
+	return outlet
+}
+
+func (m RiskModel) defenseStability(
+	decision *app.DecisionContext,
+	hidden HiddenCards,
+	hand []domain.Card,
+	size int,
+) float64 {
+	if size <= 0 {
+		return 0
+	}
+	trumps := expectedCardCount(hidden, hand, size, func(card domain.Card) bool {
+		return card.Suit == decision.TrumpSuit
+	})
+	highNonTrumps := expectedCardCount(hidden, hand, size, func(card domain.Card) bool {
+		return card.Suit != decision.TrumpSuit && rankValue(card) > 4
+	})
+	return (trumps*1.5 + highNonTrumps*0.5) / float64(size)
+}
+
+func (m RiskModel) initiativeValue(decision *app.DecisionContext, seat domain.Seat) float64 {
+	switch seat {
+	case decision.Attacker:
+		return defaultInitiativeBonus
+	case decision.Defender:
+		return -0.5
+	default:
+		return 0
+	}
+}
+
+func expectedCardCount(
+	hidden HiddenCards,
+	known []domain.Card,
+	size int,
+	match func(domain.Card) bool,
+) float64 {
+	total := 0.0
+	for _, card := range known {
+		if match(card) {
+			total++
+		}
+	}
+	unknownSlots := max(0, size-len(known))
+	if unknownSlots == 0 || len(hidden.UnknownPool) == 0 {
+		return total
+	}
+	matches := 0
+	for _, card := range hidden.UnknownPool {
+		if match(card) {
+			matches++
+		}
+	}
+	return total + float64(unknownSlots*matches)/float64(len(hidden.UnknownPool))
+}
+
+func phaseWeight(decision *app.DecisionContext) float64 {
+	return 0.35 + 0.65*endgameFactor(decision)
+}
+
+func endgameFactor(decision *app.DecisionContext) float64 {
+	if decision == nil {
+		return 1
+	}
+	hands := 0
+	for _, size := range decision.HandSizes {
+		hands += size
+	}
+	total := hands + decision.StockCount
+	if total <= 0 {
+		return 1
+	}
+	return float64(hands) / float64(total)
 }
 
 func activeRiskSeats(decision *app.DecisionContext) int {
@@ -169,80 +321,9 @@ func activeRiskSeats(decision *app.DecisionContext) int {
 	return active
 }
 
-func cardStickiness(card domain.Card, trump domain.Suit, finality float64) float64 {
-	if !validCard(card) {
-		return 1
-	}
-	sticky := 0.65 + float64(card.Rank-domain.Six)*0.08
-	if card.Suit == trump {
-		sticky += 0.35 * (1 - finality)
-	}
-	if sticky < 0.2 {
-		return 0.2
-	}
-	return sticky
-}
-
-func currentBattleThreat(decision *app.DecisionContext, hidden HiddenCards, seat domain.Seat) float64 {
-	if decision.Phase != domain.MatchPhaseDefense && decision.Phase != domain.MatchPhaseTaking {
-		return 0
-	}
-	if seat != decision.Defender {
-		return 0
-	}
-	if seat == decision.Seat {
-		return EvaluateBattleRisk(decision, hidden).Best
-	}
-	return float64(len(tableCardsForRisk(decision.Table))) * 0.8
-}
-
-func outletPotential(decision *app.DecisionContext, hand []domain.Card, seat domain.Seat) float64 {
-	if seat != decision.Seat {
-		return 0
-	}
-	outlet := 0.0
-	for _, action := range decision.LegalActions {
-		switch action.Kind {
-		case domain.ActionKindAttack, domain.ActionKindThrowIn:
-			outlet += 1.0 - math.Min(cardStickiness(action.Card, decision.TrumpSuit, 0), 1.4)/2
-		case domain.ActionKindDefend, domain.ActionKindTransfer:
-			outlet += 0.45
-		case domain.ActionKindFinishDefense, domain.ActionKindFinishTake, domain.ActionKindPassThrowIn:
-			outlet += 0.20
-		}
-	}
-	if len(hand) > 1 {
-		outlet += float64(rankPairs(hand)) * 0.25
-	}
-	return outlet
-}
-
-func defenseStability(decision *app.DecisionContext, hand []domain.Card) float64 {
-	if len(hand) == 0 {
-		return 0
-	}
-	stability := 0.0
-	for _, attack := range likelyAttacks(decision) {
-		if card, ok := cheapestDefenseCardForRisk(attack, hand, decision.TrumpSuit); ok {
-			stability += 1 / (1 + float64(cardCost(card, decision.TrumpSuit))/20)
-		}
-	}
-	return stability
-}
-
-func initiativeValue(decision *app.DecisionContext, seat domain.Seat) float64 {
-	switch {
-	case decision.Phase == domain.MatchPhaseAttack && seat == decision.Attacker:
-		return 1.0
-	case decision.Phase == domain.MatchPhaseThrowIn && seat != decision.Defender:
-		return 0.45
-	case decision.Phase == domain.MatchPhaseTaking && seat == decision.Defender:
-		return -1.0
-	case decision.Phase == domain.MatchPhaseDefense && seat == decision.Defender:
-		return -0.60
-	default:
-		return 0
-	}
+func activeProjectedSeatLike(decision *app.DecisionContext, seat domain.Seat) bool {
+	return seat != domain.NoSeat && int(seat) >= 0 && int(seat) < len(decision.HandSizes) &&
+		(decision.HandSizes[int(seat)] > 0 || decision.StockCount > 0 || len(decision.Table) > 0)
 }
 
 func softmaxProbability(risks []float64, seat int, beta float64) float64 {
@@ -303,37 +384,30 @@ func visibleHandSize(decision *app.DecisionContext, seat domain.Seat, fallback i
 	return fallback
 }
 
-func likelyAttacks(decision *app.DecisionContext) []domain.Card {
-	cards := make([]domain.Card, 0, len(decision.Table)+len(decision.LegalActions))
-	for _, pair := range decision.Table {
-		if !pair.Defended && validCard(pair.Attack) {
-			cards = append(cards, pair.Attack)
-		}
+func rankValue(card domain.Card) int {
+	if !validCard(card) {
+		return 0
 	}
-	for _, action := range decision.LegalActions {
-		switch action.Kind {
-		case domain.ActionKindAttack, domain.ActionKindThrowIn:
-			if validCard(action.Card) {
-				cards = append(cards, action.Card)
-			}
-		}
-	}
-	return cards
+	return int(card.Rank - domain.Six)
 }
 
-func cheapestDefenseCardForRisk(attack domain.Card, hand []domain.Card, trump domain.Suit) (domain.Card, bool) {
-	var best domain.Card
-	found := false
-	for _, card := range hand {
-		if !domain.CanBeat(attack, card, trump) {
-			continue
-		}
-		if !found || cardCost(card, trump) < cardCost(best, trump) {
-			best = card
-			found = true
+func rankOnProjectedTable(table []domain.TablePair, rank domain.Rank) bool {
+	for _, pair := range table {
+		if pair.Attack.Rank == rank || pair.Defended && pair.Defense.Rank == rank {
+			return true
 		}
 	}
-	return best, found
+	return false
+}
+
+func rankCount(cards []domain.Card, rank domain.Rank) int {
+	count := 0
+	for _, card := range cards {
+		if card.Rank == rank {
+			count++
+		}
+	}
+	return count
 }
 
 func rankPairs(cards []domain.Card) int {

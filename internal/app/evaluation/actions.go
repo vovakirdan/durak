@@ -56,79 +56,101 @@ func ScoreAction(decision *app.DecisionContext, hidden HiddenCards, action domai
 		return 0
 	}
 	hidden = ensureHiddenCards(decision, hidden)
+	resolution := ResolveBattleExpected(decision, hidden, action)
+	score := Evaluate(&resolution.Context, BuildHiddenCards(&resolution.Context, nil)).Score
+	penalty := localActionRiskCost(decision, hidden, action) * localActionRiskScale(action)
+	penalty += helpfulPickupRisk(decision, action, &resolution) * 60
+	return Clamp(score - Score(math.Round(penalty)))
+}
+
+func localActionRiskScale(action domain.Action) float64 {
 	switch action.Kind {
+	case domain.ActionKindDefend, domain.ActionKindTransfer:
+		return 75
 	case domain.ActionKindAttack, domain.ActionKindThrowIn:
-		return scoreAttackLikeAction(decision, hidden, action)
+		return 20
 	default:
-		projected := projectAction(decision, action)
-		score := Evaluate(&projected, BuildHiddenCards(&projected, nil)).Score
-		return Clamp(score - actionResourcePenalty(decision, action))
+		return 0
 	}
 }
 
-func scoreAttackLikeAction(decision *app.DecisionContext, hidden HiddenCards, action domain.Action) Score {
-	added := projectAction(decision, action)
-	if decision.Phase == domain.MatchPhaseTaking {
-		taken := added
-		projectFinishTake(&taken)
-		return Clamp(Evaluate(&taken, BuildHiddenCards(&taken, nil)).Score - actionResourcePenalty(decision, action))
-	}
-	pending := pendingAttacks(added.Table)
-	if len(pending) == 0 {
-		return Evaluate(&added, BuildHiddenCards(&added, nil)).Score
-	}
-	beat := added
-	for index := range beat.Table {
-		if !beat.Table[index].Defended {
-			beat.Table[index].Defended = true
-		}
-	}
-	changeHandSize(&beat, beat.Defender, -len(pending))
-	beat.Phase = domain.MatchPhaseThrowIn
-	take := added
-	projectFinishTake(&take)
-	pCover := CoverProbability(
-		pending,
-		added.Defender,
-		visibleHandSize(&added, added.Defender, 0),
-		added.TrumpSuit,
-		hidden,
-	)
-	beatScore := float64(Evaluate(&beat, BuildHiddenCards(&beat, nil)).Score)
-	takeScore := float64(Evaluate(&take, BuildHiddenCards(&take, nil)).Score)
-	score := Score(math.Round(pCover*beatScore + (1-pCover)*takeScore))
-	return Clamp(score - actionResourcePenalty(decision, action))
-}
-
-func actionResourcePenalty(decision *app.DecisionContext, action domain.Action) Score {
+func localActionRiskCost(decision *app.DecisionContext, hidden HiddenCards, action domain.Action) float64 {
 	switch action.Kind {
-	case domain.ActionKindAttack, domain.ActionKindThrowIn:
-		penalty := cardStickiness(action.Card, decision.TrumpSuit, stockFinality(decision, 0.10)) * 115
-		if action.Card.Suit == decision.TrumpSuit {
-			penalty += 160
+	case domain.ActionKindAttack:
+		cost := 0.0
+		for _, card := range action.AttackCards() {
+			cost += releaseCost(card, decision, action.Seat)
 		}
-		return Score(math.Round(penalty))
+		return cost
+	case domain.ActionKindThrowIn:
+		return releaseCost(action.Card, decision, action.Seat)
 	case domain.ActionKindDefend:
-		return Score(math.Round(defenseSpendCost(action.Card, decision) * 55))
+		return DefenseActionRisk(decision, hidden, action)
 	case domain.ActionKindTransfer:
-		return Score(math.Round((defenseSpendCost(action.Card, decision) + transferRiskCost(decision, action.Card)) * 180))
-	case domain.ActionKindTake:
-		risk := EvaluateBattleRisk(decision, BuildHiddenCards(decision, nil))
-		if risk.Best < risk.TakeNow {
-			return Score(math.Round(90 + (risk.TakeNow-risk.Best)*360))
-		}
-		return 0
+		return transferCardCost(action.Card, decision)
 	default:
 		return 0
 	}
+}
+
+func releaseCost(card domain.Card, decision *app.DecisionContext, seat domain.Seat) float64 {
+	if !validCard(card) {
+		return 1
+	}
+	cost := baseCardCost(card) + cardStickinessForSeat(card, decision, seat, decision.Hand)
+	if card.Suit == decision.TrumpSuit {
+		cost += defaultTrumpPremium * (1 - endgameFactor(decision)*0.5)
+	}
+	return cost
+}
+
+func helpfulPickupRisk(
+	decision *app.DecisionContext,
+	action domain.Action,
+	resolution *BattleResolution,
+) float64 {
+	if decision == nil || resolution == nil || resolution.FirstResponse != BattleBranchTake ||
+		resolution.Context.Winner == decision.Seat {
+		return 0
+	}
+	switch action.Kind {
+	case domain.ActionKindAttack:
+		risk := 0.0
+		for _, card := range action.AttackCards() {
+			risk += helpfulPickupCardRisk(card, decision)
+		}
+		return risk
+	case domain.ActionKindThrowIn:
+		return helpfulPickupCardRisk(action.Card, decision)
+	default:
+		return 0
+	}
+}
+
+func helpfulPickupCardRisk(card domain.Card, decision *app.DecisionContext) float64 {
+	if !validCard(card) {
+		return 0
+	}
+	risk := 0.0
+	if card.Suit == decision.TrumpSuit {
+		risk += 2.0
+	} else if rankValue(card) >= 5 {
+		risk += 1.0
+	}
+	if rankValue(card) <= 2 {
+		risk += 0.7
+	}
+	return risk * endgameFactor(decision)
 }
 
 func projectAction(decision *app.DecisionContext, action domain.Action) app.DecisionContext {
 	projected := cloneDecisionForAction(decision)
 	switch action.Kind {
 	case domain.ActionKindAttack:
-		removeProjectedCard(&projected, action.Seat, action.Card)
-		projected.Table = append(projected.Table, domain.TablePair{Attack: action.Card})
+		for _, card := range action.AttackCards() {
+			removeProjectedCard(&projected, action.Seat, card)
+			projected.Table = append(projected.Table, domain.TablePair{Attack: card})
+		}
 		projected.Attacker = action.Seat
 		projected.Phase = domain.MatchPhaseDefense
 	case domain.ActionKindThrowIn:
@@ -170,7 +192,8 @@ func cloneDecisionForAction(decision *app.DecisionContext) app.DecisionContext {
 	projected.Hand = slices.Clone(decision.Hand)
 	projected.HandSizes = slices.Clone(decision.HandSizes)
 	projected.LegalActions = nil
-	projected.PublicMemory = app.PublicCardMemory{}
+	projected.PublicMemory = decision.PublicMemory.Clone()
+	syncProjectedMemory(&projected)
 	return projected
 }
 
@@ -194,8 +217,10 @@ func projectFinishTake(projected *app.DecisionContext) {
 	if projected.Seat == oldDefender {
 		projected.Hand = append(projected.Hand, cards...)
 	}
+	rememberProjectedKnownHeld(projected, oldDefender, cards)
 	projected.Table = nil
 	projectRefill(projected, projected.Attacker, oldDefender)
+	syncProjectedMemory(projected)
 	if completeProjectedIfFinished(projected) {
 		return
 	}
@@ -219,21 +244,21 @@ func projectRefill(projected *app.DecisionContext, order ...domain.Seat) {
 		drawn := min(need, projected.StockCount)
 		projected.HandSizes[int(seat)] += drawn
 		projected.StockCount -= drawn
-		if projected.Seat == seat {
-			projected.Hand = append(projected.Hand, make([]domain.Card, drawn)...)
-		}
 	}
 }
 
 func removeProjectedCard(projected *app.DecisionContext, seat domain.Seat, card domain.Card) {
 	changeHandSize(projected, seat, -1)
 	if projected.Seat != seat {
+		removeProjectedMemoryCard(projected, seat, card)
 		return
 	}
 	index := slices.Index(projected.Hand, card)
 	if index >= 0 {
 		projected.Hand = slices.Delete(projected.Hand, index, index+1)
 	}
+	removeProjectedMemoryCard(projected, seat, card)
+	syncProjectedMemory(projected)
 }
 
 func changeHandSize(projected *app.DecisionContext, seat domain.Seat, delta int) {
@@ -331,4 +356,67 @@ func firstProjectedEmptySeat(projected *app.DecisionContext) domain.Seat {
 		}
 	}
 	return domain.NoSeat
+}
+
+func rememberProjectedKnownHeld(projected *app.DecisionContext, seat domain.Seat, cards []domain.Card) {
+	if projected == nil || !validProjectedSeat(projected, seat) {
+		return
+	}
+	ensureProjectedMemorySeats(&projected.PublicMemory, len(projected.HandSizes))
+	projected.PublicMemory.KnownHeld[int(seat)] = appendKnownCards(
+		projected.PublicMemory.KnownHeld[int(seat)],
+		cards...,
+	)
+	projected.PublicMemory.Seen = appendKnownCards(projected.PublicMemory.Seen, cards...)
+}
+
+func syncProjectedMemory(projected *app.DecisionContext) {
+	if projected == nil {
+		return
+	}
+	memory := &projected.PublicMemory
+	memory.Seat = projected.Seat
+	memory.Hand = slices.Clone(projected.Hand)
+	memory.Table = slices.Clone(projected.Table)
+	memory.HandSizes = slices.Clone(projected.HandSizes)
+	memory.StockCount = projected.StockCount
+	memory.TrumpIndicator = projected.TrumpIndicator
+	memory.TrumpSuit = projected.TrumpSuit
+	ensureProjectedMemorySeats(memory, len(projected.HandSizes))
+	if validProjectedSeat(projected, projected.Seat) {
+		memory.KnownHeld[int(projected.Seat)] = slices.Clone(projected.Hand)
+	}
+	memory.Seen = appendKnownCards(memory.Seen, projected.Hand...)
+	memory.Seen = appendKnownCards(memory.Seen, projected.TrumpIndicator)
+	for _, pair := range projected.Table {
+		memory.Seen = appendKnownCards(memory.Seen, pair.Attack)
+		if pair.Defended {
+			memory.Seen = appendKnownCards(memory.Seen, pair.Defense)
+		}
+	}
+}
+
+func removeProjectedMemoryCard(projected *app.DecisionContext, seat domain.Seat, card domain.Card) {
+	if projected == nil || !validProjectedSeat(projected, seat) {
+		return
+	}
+	memory := &projected.PublicMemory
+	ensureProjectedMemorySeats(memory, len(projected.HandSizes))
+	memory.KnownHeld[int(seat)] = removeMemoryCard(memory.KnownHeld[int(seat)], card)
+	memory.Seen = appendKnownCards(memory.Seen, card)
+}
+
+func ensureProjectedMemorySeats(memory *app.PublicCardMemory, count int) {
+	if count <= len(memory.KnownHeld) {
+		return
+	}
+	memory.KnownHeld = append(memory.KnownHeld, make([][]domain.Card, count-len(memory.KnownHeld))...)
+}
+
+func removeMemoryCard(cards []domain.Card, card domain.Card) []domain.Card {
+	index := slices.Index(cards, card)
+	if index < 0 {
+		return cards
+	}
+	return slices.Delete(cards, index, index+1)
 }

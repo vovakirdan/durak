@@ -34,7 +34,7 @@ type Command struct {
 func FormatActionCommand(action domain.Action) string {
 	switch action.Kind {
 	case domain.ActionKindAttack:
-		return "attack " + action.Card.String()
+		return "attack " + formatCards(action.AttackCards())
 	case domain.ActionKindDefend:
 		return fmt.Sprintf("defend %d %s", action.AttackIndex+1, action.Card)
 	case domain.ActionKindThrowIn:
@@ -77,7 +77,7 @@ func Parse(input string, decision *app.DecisionContext) (Command, error) {
 	fields := strings.Fields(input)
 	switch strings.ToLower(fields[0]) {
 	case "a", "attack":
-		return parseCardAction(domain.ActionKindAttack, fields[1:], decision)
+		return parseAttackAction(fields[1:], decision)
 	case "throw", "th", "add":
 		return parseCardAction(domain.ActionKindThrowIn, fields[1:], decision)
 	case "tr", "transfer":
@@ -131,6 +131,19 @@ func parseActionNumber(input string, actions []domain.Action) (domain.Action, bo
 		return domain.Action{}, false
 	}
 	return actions[index-1], true
+}
+
+func parseAttackAction(args []string, decision *app.DecisionContext) (Command, error) {
+	if len(args) == 0 {
+		return Command{}, commandError("attack expects at least one card")
+	}
+	cards, err := parseCardSelectors(args, decision.Hand)
+	if err != nil {
+		return Command{}, err
+	}
+	return findLegalAction(decision.LegalActions, func(action domain.Action) bool {
+		return action.Kind == domain.ActionKindAttack && sameCardSet(action.AttackCards(), cards)
+	})
 }
 
 func parseCardAction(kind domain.ActionKind, args []string, decision *app.DecisionContext) (Command, error) {
@@ -201,6 +214,48 @@ func findLegalAction(actions []domain.Action, match func(domain.Action) bool) (C
 		}
 	}
 	return Command{}, commandError("action is not legal now")
+}
+
+func parseCardSelectors(inputs []string, hand []domain.Card) ([]domain.Card, error) {
+	cards := make([]domain.Card, len(inputs))
+	for index, input := range inputs {
+		card, err := parseCardSelector(input, hand)
+		if err != nil {
+			return nil, err
+		}
+		cards[index] = card
+	}
+	return cards, nil
+}
+
+func sameCardSet(left, right []domain.Card) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	used := make([]bool, len(right))
+	for _, leftCard := range left {
+		found := false
+		for index, rightCard := range right {
+			if used[index] || leftCard != rightCard {
+				continue
+			}
+			used[index] = true
+			found = true
+			break
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
+
+func formatCards(cards []domain.Card) string {
+	parts := make([]string, 0, len(cards))
+	for _, card := range cards {
+		parts = append(parts, card.String())
+	}
+	return strings.Join(parts, " ")
 }
 
 func parseCardSelector(input string, hand []domain.Card) (domain.Card, error) {

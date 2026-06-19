@@ -9,17 +9,24 @@ const attackerTurnErrorFormat = "%w: attacker is %d"
 
 // Attack starts an attack with one card from the current attacker.
 func (m *Match) Attack(seat Seat, card Card) error {
-	if err := m.validateAttack(seat, card); err != nil {
+	return m.AttackMany(seat, []Card{card})
+}
+
+// AttackMany starts an attack with a same-rank packet from the current attacker.
+func (m *Match) AttackMany(seat Seat, cards []Card) error {
+	if err := m.validateAttackCards(seat, cards); err != nil {
 		return err
 	}
 
-	if err := m.addAttackCard(seat, card); err != nil {
-		return err
+	for _, card := range cards {
+		if err := m.addAttackCard(seat, card); err != nil {
+			return err
+		}
 	}
 	m.roundsStarted++
 	m.startAttackRound(seat)
 	m.phase = MatchPhaseDefense
-	m.appendActionEvent(EventKindAttack, Action{Kind: ActionKindAttack, Seat: seat, Card: card})
+	m.appendActionEvent(EventKindAttack, NewAttackAction(seat, cards...))
 	return nil
 }
 

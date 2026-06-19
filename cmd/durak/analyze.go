@@ -7,6 +7,7 @@ import (
 	"io"
 
 	"github.com/vovakirdan/durak/internal/adapters/storage"
+	"github.com/vovakirdan/durak/internal/adapters/textcmd"
 	"github.com/vovakirdan/durak/internal/app"
 	"github.com/vovakirdan/durak/internal/app/evaluation"
 	"github.com/vovakirdan/durak/internal/domain"
@@ -113,24 +114,8 @@ func writeAnalyzeWorstMoves(out io.Writer, moves []evaluation.MoveAnalysis) erro
 }
 
 func formatAnalyzeAction(action domain.Action) string {
-	switch action.Kind {
-	case domain.ActionKindAttack:
-		return "attack " + action.Card.String()
-	case domain.ActionKindDefend:
-		return fmt.Sprintf("defend %d %s", action.AttackIndex+1, action.Card)
-	case domain.ActionKindThrowIn:
-		return "throw " + action.Card.String()
-	case domain.ActionKindPassThrowIn:
-		return "pass"
-	case domain.ActionKindTake:
-		return "take"
-	case domain.ActionKindFinishDefense:
-		return "done"
-	case domain.ActionKindFinishTake:
-		return "done"
-	case domain.ActionKindTransfer:
-		return "transfer " + action.Card.String()
-	default:
-		return "unknown"
+	if command := textcmd.FormatActionCommand(action); command != "" {
+		return command
 	}
+	return "unknown"
 }

@@ -108,3 +108,31 @@ func TestBuildHiddenCardsKeepsKnownOpponentCards(t *testing.T) {
 		t.Fatalf("own card probability = %.3f, want 0", got)
 	}
 }
+
+func TestBuildHiddenCardsUsesPublicMemoryDiscard(t *testing.T) {
+	own := card(domain.Six, domain.Clubs)
+	discarded := card(domain.Ace, domain.Spades)
+	decision := app.DecisionContext{
+		SeatView: app.SeatView{
+			Seat:      domain.Seat(0),
+			TrumpSuit: domain.Hearts,
+			HandSizes: []int{1, 1},
+		},
+		Hand: []domain.Card{own},
+		PublicMemory: app.PublicCardMemory{
+			Seat:    domain.Seat(0),
+			Hand:    []domain.Card{own},
+			Discard: []domain.Card{discarded},
+			Seen:    []domain.Card{own},
+		},
+	}
+
+	hidden := evaluation.BuildHiddenCards(&decision, nil)
+
+	if !hidden.IsKnown(discarded) {
+		t.Fatalf("%v is not known, want public discard included", discarded)
+	}
+	if slices.Contains(hidden.UnknownPool, discarded) {
+		t.Fatalf("%v in unknown pool, want public discard removed", discarded)
+	}
+}

@@ -112,6 +112,7 @@ func TestPublicCardMemoryDoesNotRevealOpponentRefillCards(t *testing.T) {
 
 func TestPublicCardMemoryRemovesKnownTakenCardWhenPlayed(t *testing.T) {
 	taken := domain.Card{Rank: domain.Six, Suit: domain.Clubs}
+	secondTaken := domain.Card{Rank: domain.Six, Suit: domain.Diamonds}
 	history := app.NewPublicCardHistory()
 	history.Apply(domain.Event{
 		Kind: domain.EventKindMatchStarted,
@@ -133,28 +134,28 @@ func TestPublicCardMemoryRemovesKnownTakenCardWhenPlayed(t *testing.T) {
 		RoundEnded: &domain.RoundEndedEvent{
 			Outcome:  domain.RoundOutcomeTake,
 			Defender: domain.Seat(1),
-			Cards:    []domain.Card{taken},
+			Cards:    []domain.Card{taken, secondTaken},
 		},
 	})
 
 	before := history.Snapshot(domain.Seat(0), nil)
-	if !slices.Contains(before.KnownHeld[1], taken) {
+	if !slices.Contains(before.KnownHeld[1], taken) || !slices.Contains(before.KnownHeld[1], secondTaken) {
 		t.Fatalf("KnownHeld[1] = %v, want taken card before play", before.KnownHeld[1])
 	}
 
 	history.Apply(domain.Event{
 		Kind: domain.EventKindAttack,
 		Action: &domain.ActionEvent{
-			Action: domain.Action{Kind: domain.ActionKindAttack, Seat: domain.Seat(1), Card: taken},
+			Action: domain.NewAttackAction(domain.Seat(1), taken, secondTaken),
 		},
 	})
 
 	after := history.Snapshot(domain.Seat(0), nil)
-	if slices.Contains(after.KnownHeld[1], taken) {
+	if slices.Contains(after.KnownHeld[1], taken) || slices.Contains(after.KnownHeld[1], secondTaken) {
 		t.Fatalf("KnownHeld[1] = %v, want played known card removed", after.KnownHeld[1])
 	}
-	if !slices.Contains(after.Seen, taken) {
-		t.Fatalf("Seen = %v, want played card still known", after.Seen)
+	if !slices.Contains(after.Seen, taken) || !slices.Contains(after.Seen, secondTaken) {
+		t.Fatalf("Seen = %v, want played packet cards still known", after.Seen)
 	}
 }
 

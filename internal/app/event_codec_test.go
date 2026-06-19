@@ -254,6 +254,34 @@ func TestMarshalInternalEventJSONRoundTripsAction(t *testing.T) {
 	}
 }
 
+func TestMarshalEventJSONRoundTripsAttackPacket(t *testing.T) {
+	cards := []domain.Card{
+		{Rank: domain.Six, Suit: domain.Clubs},
+		{Rank: domain.Six, Suit: domain.Diamonds},
+	}
+	event := testEvent(domain.Event{
+		Kind: domain.EventKindAttack,
+		Action: &domain.ActionEvent{
+			Action: domain.NewAttackAction(domain.Seat(0), cards...),
+		},
+	})
+
+	data, err := app.MarshalEventJSON(&event)
+	if err != nil {
+		t.Fatalf("MarshalEventJSON returned error: %v", err)
+	}
+	if !bytes.Contains(data, []byte(`"cards"`)) {
+		t.Fatalf("packet event = %s, want cards payload", data)
+	}
+	decoded, err := app.UnmarshalEventJSON(data)
+	if err != nil {
+		t.Fatalf("UnmarshalEventJSON returned error: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, event) {
+		t.Fatalf("packet round trip = %+v, want %+v", decoded, event)
+	}
+}
+
 func TestUnmarshalEventJSONRejectsInvalidEnvelope(t *testing.T) {
 	tests := []string{
 		`{"schema_version":2,"match_id":"match","sequence":1,"kind":"match_started","visibility":"public","payload":{}}`,

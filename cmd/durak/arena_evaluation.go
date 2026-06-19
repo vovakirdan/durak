@@ -214,23 +214,41 @@ func findArenaActionEvaluation(
 }
 
 type arenaEvaluationLogRow struct {
-	MatchID           string `json:"match_id"`
-	Turn              int    `json:"turn"`
-	Seat              int    `json:"seat"`
-	Phase             string `json:"phase"`
-	RiskScore         int    `json:"risk_score"`
-	BattleTake        string `json:"battle_take,omitempty"`
-	BattleDefend      string `json:"battle_defend,omitempty"`
-	BattleTransfer    string `json:"battle_transfer,omitempty"`
-	CoverProbability  string `json:"cover_probability,omitempty"`
-	LegalHorizonClass string `json:"legal_horizon_class"`
-	LegalHorizonSet   string `json:"legal_horizon_set"`
-	ChosenAction      string `json:"chosen_action"`
-	ChosenKind        string `json:"chosen_kind"`
-	TopAction         string `json:"top_action"`
-	TopKind           string `json:"top_kind"`
-	RankChosen        int    `json:"rank_chosen"`
-	LossChosen        int    `json:"loss_chosen"`
+	MatchID           string               `json:"match_id"`
+	Turn              int                  `json:"turn"`
+	Seat              int                  `json:"seat"`
+	Phase             string               `json:"phase"`
+	RiskScore         int                  `json:"risk_score"`
+	TopScore          int                  `json:"top_score"`
+	ChosenScore       int                  `json:"chosen_score"`
+	ExpectedResponse  string               `json:"expected_response,omitempty"`
+	Branch            string               `json:"branch,omitempty"`
+	BattleTake        string               `json:"battle_take,omitempty"`
+	BattleDefend      string               `json:"battle_defend,omitempty"`
+	BattleTransfer    string               `json:"battle_transfer,omitempty"`
+	TakeCost          string               `json:"take_cost,omitempty"`
+	DefendCost        string               `json:"defend_cost,omitempty"`
+	TransferCost      string               `json:"transfer_cost,omitempty"`
+	CoverProbability  string               `json:"cover_probability,omitempty"`
+	LegalHorizonClass string               `json:"legal_horizon_class"`
+	LegalHorizonSet   string               `json:"legal_horizon_set"`
+	ChosenAction      string               `json:"chosen_action"`
+	ChosenKind        string               `json:"chosen_kind"`
+	TopAction         string               `json:"top_action"`
+	TopKind           string               `json:"top_kind"`
+	RankChosen        int                  `json:"rank_chosen"`
+	LossChosen        int                  `json:"loss_chosen"`
+	RiskComponents    *arenaRiskComponents `json:"risk_components,omitempty"`
+}
+
+type arenaRiskComponents struct {
+	HandBurden       string `json:"hand_burden"`
+	BattleRisk       string `json:"battle_risk"`
+	Outlet           string `json:"outlet"`
+	DefenseStability string `json:"defense_stability"`
+	Initiative       string `json:"initiative"`
+	RiskIndex        string `json:"risk_index"`
+	DurakProbability string `json:"durak_probability"`
 }
 
 func (s *arenaEvaluationStats) writeLog(
@@ -242,17 +260,27 @@ func (s *arenaEvaluationStats) writeLog(
 		return
 	}
 	rankChosen, lossChosen := rankAndLoss(actions, chosen)
-	position := evaluation.Evaluate(&turn.DecisionContext, evaluation.BuildHiddenCards(&turn.DecisionContext, nil))
-	battle := evaluation.EvaluateBattleRisk(&turn.DecisionContext, evaluation.BuildHiddenCards(&turn.DecisionContext, nil))
+	chosenScore := actionScore(actions, chosen)
+	hidden := evaluation.BuildHiddenCards(&turn.DecisionContext, nil)
+	position := evaluation.Evaluate(&turn.DecisionContext, hidden)
+	resolution := evaluation.ResolveBattleExpected(&turn.DecisionContext, hidden, chosen)
+	battle := resolution.Battle
 	row := arenaEvaluationLogRow{
 		MatchID:           string(turn.MatchID),
 		Turn:              turn.TurnNumber,
 		Seat:              int(turn.Seat),
 		Phase:             phaseName(turn.Phase),
 		RiskScore:         int(position.Score),
+		TopScore:          int(actions[0].Score),
+		ChosenScore:       int(chosenScore),
+		ExpectedResponse:  string(resolution.FirstResponse),
+		Branch:            string(battle.BestBranch),
 		BattleTake:        formatOptionalFloat(battle.TakeNow),
 		BattleDefend:      formatOptionalFloat(battle.ContinueDefense),
 		BattleTransfer:    formatOptionalFloat(battle.Transfer),
+		TakeCost:          formatOptionalFloat(battle.TakeNow),
+		DefendCost:        formatOptionalFloat(battle.ContinueDefense),
+		TransferCost:      formatOptionalFloat(battle.Transfer),
 		CoverProbability:  formatOptionalFloat(battle.CoverProbability),
 		LegalHorizonClass: legalHorizonClass(turn.LegalActions),
 		LegalHorizonSet:   legalHorizonSet(turn.LegalActions),
@@ -262,6 +290,7 @@ func (s *arenaEvaluationStats) writeLog(
 		TopKind:           actionKindName(actions[0].Action.Kind),
 		RankChosen:        rankChosen,
 		LossChosen:        int(lossChosen),
+		RiskComponents:    riskComponents(&turn.DecisionContext, hidden),
 	}
 	data, err := json.Marshal(row)
 	if err == nil {
@@ -286,6 +315,32 @@ func rankAndLoss(actions []evaluation.ActionEvaluation, action domain.Action) (i
 		}
 	}
 	return 0, 0
+}
+
+func actionScore(actions []evaluation.ActionEvaluation, action domain.Action) evaluation.Score {
+	for index := range actions {
+		if actions[index].Action == action {
+			return actions[index].Score
+		}
+	}
+	return 0
+}
+
+func riskComponents(decision *app.DecisionContext, hidden evaluation.HiddenCards) *arenaRiskComponents {
+	components := evaluation.DefaultRiskModel().Components(decision, hidden)
+	if decision == nil || int(decision.Seat) < 0 || int(decision.Seat) >= len(components) {
+		return nil
+	}
+	component := components[int(decision.Seat)]
+	return &arenaRiskComponents{
+		HandBurden:       formatOptionalFloat(component.HandBurden),
+		BattleRisk:       formatOptionalFloat(component.BattleRisk),
+		Outlet:           formatOptionalFloat(component.Outlet),
+		DefenseStability: formatOptionalFloat(component.DefenseStability),
+		Initiative:       formatOptionalFloat(component.Initiative),
+		RiskIndex:        formatOptionalFloat(component.RiskIndex),
+		DurakProbability: formatOptionalFloat(component.DurakProbability),
+	}
 }
 
 func legalHorizonClass(actions []domain.Action) string {

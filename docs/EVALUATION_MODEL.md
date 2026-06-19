@@ -38,11 +38,11 @@ Each active seat receives a risk index measured in approximate bad-card units.
 
 ```text
 Risk =
-    hand_burden
-  + battle_threat
-  - outlet
-  - defense_stability
-  - initiative
+    W_hand * hand_burden
+  + W_battle * battle_risk
+  - W_outlet * outlet
+  - W_defense * defense_stability
+  - W_initiative * initiative
 ```
 
 The risk vector is converted to durak probabilities with softmax:
@@ -62,8 +62,29 @@ Implemented feature names:
 - `risk_defense_stability`
 - `risk_initiative`
 
-Weights live in `internal/app/evaluation/risk.go` so the Excel model can be
-ported by changing one small struct.
+Default weights are aligned with the spreadsheet model:
+
+```text
+beta = 0.30
+W_hand = 1.00
+W_battle = 1.20
+W_outlet = 0.80
+W_defense = 0.90
+W_initiative = 0.50
+```
+
+Card-cost constants are also spreadsheet-aligned: trump premium `2.5`,
+rank-opening base `0.5`, skip penalty `2.0`, and initiative bonus `1.5`.
+
+`hand_burden` uses the workbook phase weight:
+
+```text
+e = cards_in_hands / (cards_in_hands + stock_count)
+phase_weight = 0.35 + 0.65 * e
+hand_burden = phase_weight * sum(card_stickiness)
+```
+
+As the stock disappears, exact card stickiness matters more.
 
 ## Information Model
 
@@ -73,8 +94,13 @@ ported by changing one small struct.
 - own hand;
 - table cards;
 - trump indicator;
+- public discard memory;
 - discard cards passed by analysis;
 - cards known to be held because a player visibly took them.
+
+Action projection preserves this memory. If a projected battle ends with a
+take, the visible table cards are added to the defender's known held cards
+before the boundary position is scored.
 
 Unknown cards are `deck - known`.
 
@@ -112,17 +138,60 @@ cover probability.
 
 Defense card cost includes:
 
-- card spend cost;
-- extra cost for trump reserve;
-- rank-opening pressure from unknown and known-held cards of the defense
-  card's rank.
+- `(rank_value + 1) / 9`;
+- trump reserve loss;
+- rank-opening pressure from the workbook free-rank count.
 
 Taking cost includes:
 
 - cards currently on the table as incoming burden;
 - a skip/initiative penalty.
 
-Successful defense receives a small initiative credit.
+The selected branch is exposed as `BestBranch` and is used by the battle
+resolver.
+
+## Position Terms
+
+`battle_risk` follows the workbook rows:
+
+```text
+current defender: min(take_now, continue_defense, transfer) + 0.3 * table_pressure
+passive active seat: 0.5
+attacker: 0
+```
+
+`outlet` follows the workbook total: low non-trump attack cards plus `0.5` per
+rank group with at least two cards. Throw-in cards are scored through action
+projection, not as a static position term.
+
+`defense_stability` is the workbook stability formula:
+
+```text
+(trump_count * 1.5 + high_non_trump_count * 0.5) / max(1, hand_size)
+```
+
+`initiative` is `+1.5` for the current attacker, `-0.5` for the current
+defender, and `0` for every other active seat.
+
+## Attack Packets
+
+Initial attack can be a packet of same-rank cards. `domain.Action` keeps the
+legacy `Card` field for one-card actions and stores packet attacks in a fixed
+array so actions remain comparable and existing validation paths still work.
+
+Legal attack actions are generated in this order:
+
+1. one-card attacks in hand order;
+2. same-rank packet attacks that fit the current attack limit.
+
+Text commands and traces use:
+
+```text
+attack 6C 6D
+```
+
+Public event JSON remains backward-compatible: old one-card attacks use
+`card`, packet attacks use `cards`.
 
 ## Action Ranking
 
@@ -131,15 +200,21 @@ current static score.
 
 For each legal action:
 
-1. `ScoreAction` projects the minimal public effect of the action.
-2. Attack and throw-in actions are evaluated as a mixture of:
-   - defender covers all pending attacks;
-   - defender takes the table.
-3. Deterministic actions such as defend, transfer, take, finish defense, finish
-   take, and pass are scored from their projected public state.
-4. A small resource penalty keeps irreversible card spending visible to the
-   ranker.
-5. Scores are sorted descending and converted to `Loss` and `MoveQuality`.
+1. `ScoreAction` applies the candidate action to a projected public state.
+2. `ResolveBattleExpected` resolves the current battle to a common round
+   boundary by selecting the defender's minimum-risk branch:
+   - defend all pending attacks;
+   - take the table;
+   - transfer to the next defender, with a bounded transfer chain.
+3. The resolved boundary position is scored with the risk model.
+4. A small local release-cost term keeps irreversible card spending visible to
+   the ranker, using the same spend-cost units as the battle model.
+5. Known taken cards stay visible in the projected position, so feeding a
+   defender useful cards can reduce the attacker's score.
+6. `HelpfulPickupRisk` adds a small explicit penalty when attack or throw-in is
+   expected to end with the defender taking useful cards and the action does
+   not immediately win.
+7. Scores are sorted descending and converted to `Loss` and `MoveQuality`.
 
 The projection is deliberately shallow. It is a battle-local comparison, not
 MCTS and not full game search.
@@ -151,24 +226,27 @@ MCTS and not full game search.
 `arena -eval-log <path>` writes JSONL rows with:
 
 - chosen action and top ranked action;
+- chosen score and top score;
 - chosen action rank and loss;
 - current risk score;
+- expected battle response after the chosen action;
 - battle take/defend/transfer branch costs;
 - cover probability when applicable.
+- current risk components.
 
 The log is diagnostic data for calibration, not a public gameplay event stream.
 
 ## Known Gaps
 
-- The first risk-model pass is runtime-stable but not yet calibrated to beat
-  the deterministic `simple` baseline in mirrored arena runs.
-- Initial attack is still one `domain.Action` per card. The research model's
-  `AttackPacket(rank, cards)` is not implemented because the domain legal-action
-  API does not expose packet attacks yet.
+- Current weights and action-local penalties are not calibrated to beat the
+  deterministic `simple` baseline in mirrored arena runs yet.
 - Refill projection approximates attack participants from visible roles. The
   current `DecisionContext` does not expose full attack participant order.
 - Multi-seat throw-in pressure is approximate.
 - Cover probability uses deterministic sampling for larger hidden pools instead
   of exhaustive belief enumeration.
+- The spreadsheet parity test locks the battle-cost fixture exactly and score
+  direction broadly; hand-burden cached values in the workbook are not used as a
+  runtime dependency.
 - No god-mode evaluator is implemented.
 - No learned weights are implemented.

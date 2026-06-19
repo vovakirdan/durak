@@ -76,6 +76,13 @@ func actionLess(left, right domain.Action, trumpSuit domain.Suit) bool {
 	if left.AttackIndex != right.AttackIndex {
 		return left.AttackIndex < right.AttackIndex
 	}
+	if left.Kind == domain.ActionKindAttack && right.Kind == domain.ActionKindAttack {
+		leftCount := len(left.AttackCards())
+		rightCount := len(right.AttackCards())
+		if leftCount != rightCount {
+			return leftCount < rightCount
+		}
+	}
 	return cardLess(left.Card, right.Card, trumpSuit)
 }
 

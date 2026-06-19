@@ -23,29 +23,22 @@ func TestBattleRiskCanPreferTakingOverBurningLastTrump(t *testing.T) {
 	}
 }
 
-func TestBattleRiskPrefersCheapDefenseOverTakingHeavyTable(t *testing.T) {
+func TestBattleRiskPrefersCheapDefenseOverTakingCostlyTable(t *testing.T) {
 	defendClub := domain.Action{
 		Kind:        domain.ActionKindDefend,
 		Seat:        domain.Seat(1),
-		Card:        card(domain.Ace, domain.Clubs),
+		Card:        card(domain.Nine, domain.Clubs),
 		AttackIndex: 0,
 	}
-	defendDiamond := domain.Action{
-		Kind:        domain.ActionKindDefend,
-		Seat:        domain.Seat(1),
-		Card:        card(domain.Six, domain.Hearts),
-		AttackIndex: 1,
-	}
 	take := domain.Action{Kind: domain.ActionKindTake, Seat: domain.Seat(1)}
-	decision := battleDecision([]domain.Card{defendClub.Card, defendDiamond.Card}, []domain.TablePair{
-		{Attack: card(domain.King, domain.Clubs)},
-		{Attack: card(domain.Ace, domain.Diamonds)},
-	}, []domain.Action{defendClub, defendDiamond, take})
+	decision := battleDecision([]domain.Card{defendClub.Card}, []domain.TablePair{
+		{Attack: card(domain.Eight, domain.Clubs)},
+	}, []domain.Action{defendClub, take})
 
 	risk := evaluation.EvaluateBattleRisk(&decision, evaluation.BuildHiddenCards(&decision, nil))
 
 	if risk.Best != risk.ContinueDefense {
-		t.Fatalf("risk = %+v, want defending heavy table", risk)
+		t.Fatalf("risk = %+v, want defending costly table", risk)
 	}
 }
 
@@ -55,12 +48,19 @@ func TestDefenseCardRiskIncludesOpenedRankPressure(t *testing.T) {
 	decision := battleDecision([]domain.Card{cheap.Card, expensive.Card}, []domain.TablePair{
 		{Attack: card(domain.Eight, domain.Clubs)},
 	}, []domain.Action{cheap, expensive})
-	hidden := evaluation.BuildHiddenCards(&decision, nil)
-	hidden.UnknownPool = []domain.Card{
-		card(domain.Nine, domain.Diamonds),
-		card(domain.Nine, domain.Hearts),
-		card(domain.Nine, domain.Spades),
+	decision.PublicMemory = publicKnownHands(decision, [][]domain.Card{
+		{
+			card(domain.Nine, domain.Diamonds),
+			card(domain.Nine, domain.Hearts),
+		},
+		decision.Hand,
+	})
+	decision.PublicMemory.Discard = []domain.Card{
+		card(domain.King, domain.Diamonds),
+		card(domain.King, domain.Hearts),
+		card(domain.King, domain.Spades),
 	}
+	hidden := evaluation.BuildHiddenCards(&decision, nil)
 
 	cheapRisk := evaluation.DefenseActionRisk(&decision, hidden, cheap)
 	expensiveRisk := evaluation.DefenseActionRisk(&decision, hidden, expensive)
@@ -68,6 +68,29 @@ func TestDefenseCardRiskIncludesOpenedRankPressure(t *testing.T) {
 	if cheapRisk <= expensiveRisk {
 		t.Fatalf("cheap risk = %.2f, expensive risk = %.2f; opened rank pressure should matter",
 			cheapRisk, expensiveRisk)
+	}
+}
+
+func TestBattleRiskTablePressureUsesExcelFreeRankCount(t *testing.T) {
+	defend := domain.Action{
+		Kind:        domain.ActionKindDefend,
+		Seat:        domain.Seat(1),
+		Card:        card(domain.Ten, domain.Clubs),
+		AttackIndex: 0,
+	}
+	decision := battleDecision([]domain.Card{defend.Card}, []domain.TablePair{
+		{Attack: card(domain.Nine, domain.Clubs)},
+	}, []domain.Action{defend})
+	decision.HandSizes = []int{1, 1}
+	decision.PublicMemory = publicKnownHands(decision, [][]domain.Card{
+		{card(domain.Nine, domain.Diamonds)},
+		decision.Hand,
+	})
+
+	risk := evaluation.EvaluateBattleRisk(&decision, evaluation.BuildHiddenCards(&decision, nil))
+
+	if !almostEqual(risk.TablePressure, 3) {
+		t.Fatalf("TablePressure = %.6f, want free rank count", risk.TablePressure)
 	}
 }
 

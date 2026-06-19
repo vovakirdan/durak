@@ -1,9 +1,6 @@
 package evaluation
 
-import (
-	"github.com/vovakirdan/durak/internal/app"
-	"github.com/vovakirdan/durak/internal/domain"
-)
+import "github.com/vovakirdan/durak/internal/app"
 
 // Evaluator keeps the historical evaluator entry point while delegating to the
 // current risk model.
@@ -43,12 +40,4 @@ func ensureHiddenCards(decision *app.DecisionContext, hidden HiddenCards) Hidden
 		return BuildHiddenCards(decision, nil)
 	}
 	return hidden
-}
-
-func cardCost(card domain.Card, trumpSuit domain.Suit) int {
-	cost := int(card.Rank)
-	if card.Suit == trumpSuit {
-		cost += 20
-	}
-	return cost
 }

@@ -141,12 +141,21 @@ func (h *PublicCardHistory) applyDeal(deal *domain.DealEvent) {
 }
 
 func (h *PublicCardHistory) applyCardAction(event *domain.ActionEvent) {
-	if event == nil || !validPublicCard(event.Action.Card) {
+	if event == nil {
 		return
 	}
-	card := event.Action.Card
-	h.seen = appendUniqueCards(h.seen, card)
-	h.removeKnownHeld(event.Action.Seat, card)
+	if event.Action.Kind == domain.ActionKindAttack {
+		for _, card := range event.Action.AttackCards() {
+			h.seen = appendUniqueCards(h.seen, card)
+			h.removeKnownHeld(event.Action.Seat, card)
+		}
+		return
+	}
+	if !validPublicCard(event.Action.Card) {
+		return
+	}
+	h.seen = appendUniqueCards(h.seen, event.Action.Card)
+	h.removeKnownHeld(event.Action.Seat, event.Action.Card)
 }
 
 func (h *PublicCardHistory) applyRefill(refill *domain.RefillEvent) {

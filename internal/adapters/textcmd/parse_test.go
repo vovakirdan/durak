@@ -48,6 +48,27 @@ func TestParseParsesAttackByHandIndex(t *testing.T) {
 	}
 }
 
+func TestParseParsesAttackPacket(t *testing.T) {
+	first := domain.Card{Rank: domain.Six, Suit: domain.Clubs}
+	second := domain.Card{Rank: domain.Six, Suit: domain.Diamonds}
+	packet := domain.NewAttackAction(domain.Seat(0), first, second)
+	decision := app.DecisionContext{
+		Hand:         []domain.Card{first, second},
+		LegalActions: []domain.Action{packet},
+	}
+
+	command, err := textcmd.Parse("attack 6D 6C", &decision)
+	if err != nil {
+		t.Fatalf("Parse returned error: %v", err)
+	}
+	if command.Action != packet {
+		t.Fatalf("action = %+v, want packet %+v", command.Action, packet)
+	}
+	if got := textcmd.FormatActionCommand(packet); got != "attack 6C 6D" {
+		t.Fatalf("FormatActionCommand = %q, want packet command", got)
+	}
+}
+
 func TestParseParsesDefendByAttackNumberAndCardCode(t *testing.T) {
 	card := domain.Card{Rank: domain.Seven, Suit: domain.Clubs}
 	decision := app.DecisionContext{

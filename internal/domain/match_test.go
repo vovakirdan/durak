@@ -567,6 +567,83 @@ func TestAttackLimitCanUseDefenderInitialHandSize(t *testing.T) {
 	}
 }
 
+func TestLegalActionsIncludeInitialAttackPackets(t *testing.T) {
+	attacks := []Card{
+		{Rank: Six, Suit: Clubs},
+		{Rank: Six, Suit: Diamonds},
+		{Rank: Seven, Suit: Spades},
+	}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			attacks,
+			{{Rank: King, Suit: Clubs}, {Rank: Queen, Suit: Clubs}},
+		},
+		nil,
+		0,
+	))
+	packet := NewAttackAction(Seat(0), attacks[0], attacks[1])
+
+	if got := match.LegalActions(Seat(0)); !slices.Contains(got, packet) {
+		t.Fatalf("LegalActions = %v, want packet %v", got, packet)
+	}
+}
+
+func TestApplyActionInitialAttackPacketMovesAllCardsToTable(t *testing.T) {
+	attacks := []Card{
+		{Rank: Six, Suit: Clubs},
+		{Rank: Six, Suit: Diamonds},
+	}
+	match := mustNewMatch(t, matchDeal(
+		[][]Card{
+			attacks,
+			{{Rank: King, Suit: Clubs}, {Rank: Queen, Suit: Clubs}},
+		},
+		nil,
+		0,
+	))
+
+	if err := match.ApplyAction(NewAttackAction(Seat(0), attacks...)); err != nil {
+		t.Fatalf("ApplyAction packet returned error: %v", err)
+	}
+	if got := match.Hand(Seat(0)); len(got) != 0 {
+		t.Fatalf("attacker hand = %v, want empty", got)
+	}
+	table := match.Table()
+	if len(table) != 2 || table[0].Attack != attacks[0] || table[1].Attack != attacks[1] {
+		t.Fatalf("table = %v, want both packet attacks", table)
+	}
+	events := match.Events()
+	if got := events[len(events)-1].Action.Action.AttackCards(); !slices.Equal(got, attacks) {
+		t.Fatalf("event attack cards = %v, want %v", got, attacks)
+	}
+}
+
+func TestInitialAttackPacketRespectsDefenderLimit(t *testing.T) {
+	profile := DefaultRuleProfile()
+	profile.AttackLimitPolicy = AttackLimitByDefenderInitialHand
+	attacks := []Card{
+		{Rank: Six, Suit: Clubs},
+		{Rank: Six, Suit: Diamonds},
+		{Rank: Six, Suit: Spades},
+	}
+	match := mustNewMatchWithProfile(t, matchDeal(
+		[][]Card{
+			attacks,
+			{{Rank: King, Suit: Clubs}, {Rank: Queen, Suit: Clubs}},
+		},
+		nil,
+		0,
+	), profile)
+
+	err := match.ApplyAction(NewAttackAction(Seat(0), attacks...))
+	if !errors.Is(err, ErrAttackLimitReached) {
+		t.Fatalf("ApplyAction packet error = %v, want ErrAttackLimitReached", err)
+	}
+	if got := match.Table(); len(got) != 0 {
+		t.Fatalf("table = %v, want unchanged after rejected packet", got)
+	}
+}
+
 func TestThreePlayerRolesSkipEmptySeatWhenStockIsEmpty(t *testing.T) {
 	attack := Card{Rank: Six, Suit: Clubs}
 	defense := Card{Rank: Seven, Suit: Clubs}

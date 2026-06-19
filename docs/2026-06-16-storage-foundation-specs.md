@@ -208,3 +208,11 @@ The storage iteration should include tests for:
 Project verification remains `make check`. For storage changes, `go test -race
 ./...` is recommended before commit because storage adapters introduce shared
 resources and transactions.
+
+## Open Research: SQLite Write Throughput
+
+TODO: investigate arena write throughput before relying on large stored
+calibration runs. A 300-match arena run with `-db` caused visible SSD load, so
+measure transaction count, fsync cost, WAL mode, synchronous settings, batch
+shape, and whether match-level buffering is enough. Do not change storage yet;
+first produce timings for the current path.

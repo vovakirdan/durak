@@ -2,7 +2,7 @@ package domain
 
 import "fmt"
 
-func (m *Match) validateAttack(seat Seat, card Card) error {
+func (m *Match) validateAttackCards(seat Seat, cards []Card) error {
 	if err := m.requireInProgress(); err != nil {
 		return err
 	}
@@ -12,8 +12,28 @@ func (m *Match) validateAttack(seat Seat, card Card) error {
 	if seat != m.attacker {
 		return fmt.Errorf(attackerTurnErrorFormat, ErrNotPlayersTurn, m.attacker)
 	}
-	if !m.hasCard(seat, card) {
-		return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
+	if len(cards) == 0 {
+		return fmt.Errorf("%w: attack requires at least one card", ErrInvalidAction)
+	}
+	if len(cards) > maxActionAttackCards {
+		return fmt.Errorf("%w: attack packet has %d cards", ErrInvalidAction, len(cards))
+	}
+	rank := cards[0].Rank
+	seen := make(map[Card]bool, len(cards))
+	for _, card := range cards {
+		if card.Rank != rank {
+			return fmt.Errorf("%w: attack packet cards must share rank", ErrInvalidAction)
+		}
+		if seen[card] {
+			return fmt.Errorf("%w: duplicate attack card %s", ErrInvalidAction, card)
+		}
+		seen[card] = true
+		if !m.hasCard(seat, card) {
+			return fmt.Errorf("%w: %s", ErrCardNotInHand, card)
+		}
+	}
+	if err := m.validateCanAddAttackCards(m.defender, len(cards)); err != nil {
+		return err
 	}
 	return nil
 }

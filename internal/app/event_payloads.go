@@ -59,10 +59,11 @@ type actionEventPayload struct {
 }
 
 type actionPayload struct {
-	Kind        string       `json:"kind"`
-	Seat        int          `json:"seat"`
-	Card        *cardPayload `json:"card,omitempty"`
-	AttackIndex int          `json:"attack_index,omitempty"`
+	Kind        string        `json:"kind"`
+	Seat        int           `json:"seat"`
+	Card        *cardPayload  `json:"card,omitempty"`
+	Cards       []cardPayload `json:"cards,omitempty"`
+	AttackIndex int           `json:"attack_index,omitempty"`
 }
 
 type refillPayload struct {

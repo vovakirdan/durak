@@ -11,8 +11,8 @@ func TestNewPositionEvaluationSumsAndClamps(t *testing.T) {
 	result := evaluation.NewPositionEvaluation(
 		domain.Seat(1),
 		150,
-		evaluation.FeatureContribution{Name: evaluation.FeatureMaterialPressure, Score: 900},
-		evaluation.FeatureContribution{Name: evaluation.FeatureTrumpStrength, Score: 250},
+		evaluation.FeatureContribution{Name: evaluation.FeatureRiskHandBurden, Score: 900},
+		evaluation.FeatureContribution{Name: evaluation.FeatureRiskOutlet, Score: 250},
 	)
 
 	if result.Seat != domain.Seat(1) {
@@ -33,7 +33,7 @@ func TestNewPositionEvaluationClampsNegativeConfidence(t *testing.T) {
 	result := evaluation.NewPositionEvaluation(
 		domain.Seat(0),
 		-10,
-		evaluation.FeatureContribution{Name: evaluation.FeatureMaterialPressure, Score: -1200},
+		evaluation.FeatureContribution{Name: evaluation.FeatureRiskScore, Score: -1200},
 	)
 
 	if result.Score != evaluation.MinScore {

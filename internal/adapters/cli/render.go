@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/vovakirdan/durak/internal/adapters/textcmd"
 	"github.com/vovakirdan/durak/internal/app"
 	"github.com/vovakirdan/durak/internal/domain"
 )
@@ -157,7 +158,7 @@ func formatPhase(phase domain.MatchPhase) string {
 func formatAction(action domain.Action) string {
 	switch action.Kind {
 	case domain.ActionKindAttack:
-		return fmt.Sprintf("attack %s", action.Card)
+		return textcmd.FormatActionCommand(action)
 	case domain.ActionKindDefend:
 		return fmt.Sprintf("defend %d with %s", action.AttackIndex+1, action.Card)
 	case domain.ActionKindThrowIn:

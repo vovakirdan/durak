@@ -11,6 +11,7 @@ import (
 
 	"github.com/vovakirdan/durak/internal/adapters/textcmd"
 	"github.com/vovakirdan/durak/internal/app"
+	"github.com/vovakirdan/durak/internal/domain"
 )
 
 const rawCommandTraceSchemaVersion = 1
@@ -116,12 +117,13 @@ type rawCommandTraceRecord struct {
 }
 
 type rawCommandTraceDecision struct {
-	Kind        string `json:"kind"`
-	Command     string `json:"command,omitempty"`
-	ActionKind  string `json:"action_kind,omitempty"`
-	Seat        int    `json:"seat,omitempty"`
-	Card        string `json:"card,omitempty"`
-	AttackIndex int    `json:"attack_index,omitempty"`
+	Kind        string   `json:"kind"`
+	Command     string   `json:"command,omitempty"`
+	ActionKind  string   `json:"action_kind,omitempty"`
+	Seat        int      `json:"seat,omitempty"`
+	Card        string   `json:"card,omitempty"`
+	Cards       []string `json:"cards,omitempty"`
+	AttackIndex int      `json:"attack_index,omitempty"`
 }
 
 func newRawCommandTraceRecord(trace *RawCommandTrace) rawCommandTraceRecord {
@@ -189,6 +191,7 @@ func traceDecision(decision app.PlayerDecision) *rawCommandTraceDecision {
 			ActionKind:  actionKindName(action.Kind),
 			Seat:        int(action.Seat),
 			Card:        cardCode(action.Card),
+			Cards:       actionCardCodes(action),
 			AttackIndex: action.AttackIndex,
 		}
 	case app.PlayerDecisionConcede:
@@ -199,4 +202,15 @@ func traceDecision(decision app.PlayerDecision) *rawCommandTraceDecision {
 	default:
 		return nil
 	}
+}
+
+func actionCardCodes(action domain.Action) []string {
+	if action.Kind != domain.ActionKindAttack || len(action.AttackCards()) <= 1 {
+		return nil
+	}
+	codes := make([]string, 0, len(action.AttackCards()))
+	for _, card := range action.AttackCards() {
+		codes = append(codes, cardCode(card))
+	}
+	return codes
 }

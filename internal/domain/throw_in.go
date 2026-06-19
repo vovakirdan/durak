@@ -64,9 +64,16 @@ func (m *Match) attackLimitForDefender(defender Seat) int {
 }
 
 func (m *Match) validateCanAddAttackCard(defender Seat) error {
+	return m.validateCanAddAttackCards(defender, 1)
+}
+
+func (m *Match) validateCanAddAttackCards(defender Seat, count int) error {
+	if count <= 0 {
+		return nil
+	}
 	if m.phase != MatchPhaseTaking && m.profile.FirstSuccessfulDefenseAttackLimit > 0 && m.successfulDefenses == 0 {
 		limit := m.profile.FirstSuccessfulDefenseAttackLimit
-		if len(m.table) >= limit {
+		if len(m.table)+count > limit {
 			return attackLimitError(limit)
 		}
 	}
@@ -75,7 +82,7 @@ func (m *Match) validateCanAddAttackCard(defender Seat) error {
 		if limit == 0 {
 			limit = m.attackLimitForDefender(defender)
 		}
-		if len(m.table) >= limit {
+		if len(m.table)+count > limit {
 			return attackLimitError(limit)
 		}
 	}

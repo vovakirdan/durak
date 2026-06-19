@@ -22,6 +22,7 @@ func BuildHiddenCards(decision *app.DecisionContext, discard []domain.Card) Hidd
 	}
 	if hasPublicMemory(&decision.PublicMemory) {
 		known := appendKnownCards(nil, decision.PublicMemory.Seen...)
+		known = appendKnownCards(known, decision.PublicMemory.Discard...)
 		known = appendKnownCards(known, discard...)
 		hidden := NewHiddenCards(known)
 		hidden.Seat = decision.Seat
