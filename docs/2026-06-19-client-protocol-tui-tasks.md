@@ -343,6 +343,9 @@ Expected: tests pass.
 
 ## Epic 4: Daemon Prototype
 
+**Status:** In progress. Task 13 has a minimal in-memory table registry around
+`client.LocalGame`; no daemon binary or transport has been added.
+
 ### Task 13: Add Local Table Registry
 
 **Files:**
