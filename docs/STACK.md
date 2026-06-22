@@ -48,6 +48,9 @@
 - **Delivery or rendering approach:** Wish hosts a Bubble Tea program per SSH session.
 - **State/data access approach:** session service creates or resumes game sessions and talks to persistence once storage exists.
 - **Why this choice fits:** SSH access is a target product feature, and Wish is built specifically for serving terminal applications over SSH.
+- **Current transport decision:** choose Wish-hosted SSH before any HTTP,
+  gRPC, or protobuf API. Revisit an API transport only when a non-terminal
+  client, such as React, becomes a real target.
 
 ## 4. Execution and Service Components
 
@@ -82,6 +85,8 @@
 ## 5. Interfaces and Compatibility
 
 - **Primary API style:** in-process interfaces for MVP; future daemon boundaries stay internal Go interfaces until a remote API is needed.
+- **Remote transport order:** SSH/Wish first, API/protobuf later only with a
+  concrete second frontend or process-boundary requirement.
 - **Schema/documentation approach:** domain events and persisted records use versioned structs and stable serialization for replay/export compatibility. JSON is the first candidate because it is easy to inspect and export, not because it is the only acceptable format.
 - **Auth/session strategy:** none for local CLI; future SSH mode starts with SSH key identity or server-managed player aliases.
 - **Realtime approach:** local in-process event loop for CLI/TUI; one Bubble Tea program per SSH session under Wish for hosted play.

@@ -379,6 +379,9 @@ Current implementation: `go run ./cmd/durakd status`.
 
 ## Epic 5: Remote Multiplayer
 
+**Status:** Transport direction selected. Prefer Wish-hosted SSH TUI first; do
+not build HTTP/protobuf transport until a non-terminal client is real.
+
 ### Task 15: Choose SSH or API Transport
 
 **Files:**
