@@ -29,11 +29,19 @@ var (
 // GameFactory creates one local game for a single SSH session.
 type GameFactory func(context.Context) (*client.LocalGame, error)
 
+// GameOptions configures the local game created for each SSH session.
+type GameOptions struct {
+	Bot    string
+	Seed   uint64
+	Seeded bool
+}
+
 // ServerOptions configures the development Wish server.
 type ServerOptions struct {
 	Addr        string
 	HostKeyPath string
 	NewGame     GameFactory
+	Game        GameOptions
 }
 
 // NewServer builds a Wish SSH server that hosts one TUI game per session.
@@ -50,7 +58,13 @@ func NewServer(options *ServerOptions) (*gossh.Server, error) {
 	}
 	newGame := options.NewGame
 	if newGame == nil {
-		newGame = NewLocalGame
+		gameOptions := options.Game
+		if err := validateGameOptions(&gameOptions); err != nil {
+			return nil, err
+		}
+		newGame = func(ctx context.Context) (*client.LocalGame, error) {
+			return NewLocalGame(ctx, &gameOptions)
+		}
 	}
 
 	sshOptions := []gossh.Option{
@@ -68,18 +82,44 @@ func NewServer(options *ServerOptions) (*gossh.Server, error) {
 }
 
 // NewLocalGame creates the default one-human SSH game against a simple bot.
-func NewLocalGame(ctx context.Context) (*client.LocalGame, error) {
-	game, err := client.NewLocalGame(ctx, &client.LocalGameOptions{
+func NewLocalGame(ctx context.Context, options *GameOptions) (*client.LocalGame, error) {
+	gameOptions := GameOptions{}
+	if options != nil {
+		gameOptions = *options
+	}
+	if err := validateGameOptions(&gameOptions); err != nil {
+		return nil, err
+	}
+	controller, err := bot.NewController(bot.ControllerSpec{
+		Kind:   gameOptions.Bot,
+		Seed:   gameOptions.Seed,
+		Seeded: gameOptions.Seeded,
+	}, domain.Seat(1))
+	if err != nil {
+		return nil, err
+	}
+	localOptions := client.LocalGameOptions{
 		SeriesID:    "ssh-series",
 		BaseMatchID: "ssh-match",
 		PlayerCount: 2,
 		HumanSeat:   domain.Seat(0),
 		Controllers: map[domain.Seat]app.PlayerController{
-			domain.Seat(1): app.StrategyController{Strategy: bot.NewSimpleStrategy()},
+			domain.Seat(1): controller,
 		},
-	})
+	}
+	if gameOptions.Seeded {
+		localOptions.Deal = domain.SeededDealOptions(gameOptions.Seed)
+	}
+	game, err := client.NewLocalGame(ctx, &localOptions)
 	if err != nil {
 		return nil, fmt.Errorf("new local ssh game: %w", err)
 	}
 	return game, nil
+}
+
+func validateGameOptions(options *GameOptions) error {
+	if options == nil {
+		return nil
+	}
+	return bot.ValidateControllerKind(options.Bot)
 }

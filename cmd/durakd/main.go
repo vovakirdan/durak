@@ -7,7 +7,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 
+	"github.com/vovakirdan/durak/internal/adapters/bot"
 	sshadapter "github.com/vovakirdan/durak/internal/adapters/ssh"
 	"github.com/vovakirdan/durak/internal/app/server"
 )
@@ -62,6 +64,7 @@ func runSSH(_ context.Context, args []string, out io.Writer) error {
 }
 
 func parseSSHOptions(args []string, out io.Writer, hostKeyPath string) (sshadapter.ServerOptions, error) {
+	var seed optionalSeedFlag
 	options := sshadapter.ServerOptions{
 		Addr:        sshadapter.DefaultAddr,
 		HostKeyPath: hostKeyPath,
@@ -69,13 +72,20 @@ func parseSSHOptions(args []string, out io.Writer, hostKeyPath string) (sshadapt
 	flags := flag.NewFlagSet("durakd ssh", flag.ContinueOnError)
 	flags.SetOutput(out)
 	flags.StringVar(&options.Addr, "addr", options.Addr, "SSH listen address")
+	flags.StringVar(&options.Game.Bot, "bot", bot.ControllerSimple, "bot controller: simple, random, heuristic")
 	flags.StringVar(&options.HostKeyPath, "host-key", options.HostKeyPath, "SSH host key path")
+	flags.Var(&seed, "seed", "deterministic deal and bot seed")
 	if err := flags.Parse(args); err != nil {
 		return options, err
 	}
 	if flags.NArg() != 0 {
 		return options, fmt.Errorf("unknown argument %q", flags.Arg(0))
 	}
+	if err := bot.ValidateControllerKind(options.Game.Bot); err != nil {
+		return options, err
+	}
+	options.Game.Seed = seed.value
+	options.Game.Seeded = seed.set
 	return options, nil
 }
 
@@ -89,4 +99,26 @@ func defaultHostKeyPath() (string, error) {
 		return "", fmt.Errorf("create config dir: %w", err)
 	}
 	return filepath.Join(dir, "durakd_ed25519"), nil
+}
+
+type optionalSeedFlag struct {
+	value uint64
+	set   bool
+}
+
+func (f *optionalSeedFlag) Set(value string) error {
+	seed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil {
+		return err
+	}
+	f.value = seed
+	f.set = true
+	return nil
+}
+
+func (f *optionalSeedFlag) String() string {
+	if f == nil || !f.set {
+		return ""
+	}
+	return strconv.FormatUint(f.value, 10)
 }

@@ -68,7 +68,7 @@ go run ./cmd/durak tui -seed 42 -bot simple
 Run the development SSH-hosted TUI with:
 
 ```sh
-go run ./cmd/durakd ssh
+go run ./cmd/durakd ssh -seed 42 -bot simple
 ssh localhost -p 23234
 ```
 
