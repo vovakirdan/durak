@@ -8,10 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/vovakirdan/durak/internal/adapters/bot"
 	sshadapter "github.com/vovakirdan/durak/internal/adapters/ssh"
 	"github.com/vovakirdan/durak/internal/app/server"
+	"github.com/vovakirdan/durak/internal/domain"
 )
 
 func main() {
@@ -75,6 +77,15 @@ func parseSSHOptions(args []string, out io.Writer, hostKeyPath string) (sshadapt
 	flags.StringVar(&options.Game.Bot, "bot", bot.ControllerSimple, "bot controller: simple, random, heuristic")
 	flags.StringVar(&options.HostKeyPath, "host-key", options.HostKeyPath, "SSH host key path")
 	flags.StringVar(&options.TableID, "table", "", "in-memory table id shared by SSH sessions")
+	flags.IntVar(&options.Table.PlayerCount, "seats", 2, "table seats in -table mode")
+	flags.Func("human-seats", "comma-separated human seats in -table mode", func(value string) error {
+		seats, err := parseSeatList(value)
+		if err != nil {
+			return err
+		}
+		options.Table.HumanSeats = seats
+		return nil
+	})
 	flags.Var(&seed, "seed", "deterministic deal and bot seed")
 	if err := flags.Parse(args); err != nil {
 		return options, err
@@ -122,4 +133,20 @@ func (f *optionalSeedFlag) String() string {
 		return ""
 	}
 	return strconv.FormatUint(f.value, 10)
+}
+
+func parseSeatList(value string) ([]domain.Seat, error) {
+	if strings.TrimSpace(value) == "" {
+		return nil, fmt.Errorf("human-seats cannot be empty")
+	}
+	parts := strings.Split(value, ",")
+	seats := make([]domain.Seat, 0, len(parts))
+	for _, part := range parts {
+		seatNumber, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || seatNumber < 0 {
+			return nil, fmt.Errorf("invalid human seat %q", part)
+		}
+		seats = append(seats, domain.Seat(seatNumber))
+	}
+	return seats, nil
 }

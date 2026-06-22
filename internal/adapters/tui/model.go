@@ -299,7 +299,7 @@ func renderState(b *strings.Builder, state *client.State) {
 	}
 	b.WriteString("\nActions:")
 	if len(state.LegalActions) == 0 {
-		b.WriteString(" none")
+		b.WriteString(waitingText(state))
 	}
 	for _, action := range state.LegalActions {
 		fmt.Fprintf(b, "\n  %s. %s", action.ID, action.Label)
@@ -308,4 +308,11 @@ func renderState(b *strings.Builder, state *client.State) {
 		fmt.Fprintf(b, "\nResult: %s", state.Result)
 	}
 	b.WriteString("\n")
+}
+
+func waitingText(state *client.State) string {
+	if state == nil || state.Phase == "complete" {
+		return " none"
+	}
+	return " waiting for another seat"
 }
