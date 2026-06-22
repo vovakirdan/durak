@@ -425,6 +425,33 @@ make check
 Expected: checks pass, and `go run ./cmd/durakd ssh` accepts a local SSH TUI
 session.
 
+### Task 17: Add SSH Game Smoke Options
+
+**Files:**
+
+- Modify: `cmd/durakd/main.go`
+- Modify: `cmd/durakd/main_test.go`
+- Modify: `internal/adapters/ssh/server.go`
+- Modify: `internal/adapters/ssh/server_test.go`
+- Modify: `README.md`
+
+**Steps:**
+
+1. Add `durakd ssh -seed` for deterministic hosted TUI smoke tests.
+2. Add `durakd ssh -bot` for local bot controllers: `simple`, `random`, and
+   `heuristic`.
+3. Keep AI provider flags, multi-seat table config, auth, and persistence out of
+   this task.
+4. Run:
+
+```sh
+go test ./cmd/durakd ./internal/adapters/ssh
+make check
+```
+
+Expected: SSH-hosted TUI sessions can be smoke-tested against each local bot
+kind without adding a remote API.
+
 ## Execution Rules
 
 - Finish Epic 1 before starting TUI.

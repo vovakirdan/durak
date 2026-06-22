@@ -35,7 +35,11 @@ func TestParseSSHOptions(t *testing.T) {
 	hostKey := filepath.Join(t.TempDir(), "host_ed25519")
 	var out bytes.Buffer
 
-	options, err := parseSSHOptions([]string{"-addr", "127.0.0.1:0"}, &out, hostKey)
+	options, err := parseSSHOptions([]string{
+		"-addr", "127.0.0.1:0",
+		"-bot", "random",
+		"-seed", "42",
+	}, &out, hostKey)
 	if err != nil {
 		t.Fatalf("parseSSHOptions returned error: %v", err)
 	}
@@ -45,6 +49,12 @@ func TestParseSSHOptions(t *testing.T) {
 	}
 	if options.HostKeyPath != hostKey {
 		t.Fatalf("HostKeyPath = %q, want %q", options.HostKeyPath, hostKey)
+	}
+	if options.Game.Bot != "random" {
+		t.Fatalf("Bot = %q, want random", options.Game.Bot)
+	}
+	if options.Game.Seed != 42 || !options.Game.Seeded {
+		t.Fatalf("Game seed = %d seeded=%v, want 42 true", options.Game.Seed, options.Game.Seeded)
 	}
 }
 
@@ -62,5 +72,21 @@ func TestParseSSHOptionsDefaults(t *testing.T) {
 	}
 	if options.HostKeyPath != hostKey {
 		t.Fatalf("HostKeyPath = %q, want %q", options.HostKeyPath, hostKey)
+	}
+	if options.Game.Bot != "simple" {
+		t.Fatalf("Bot = %q, want simple", options.Game.Bot)
+	}
+	if options.Game.Seeded {
+		t.Fatal("Seeded = true, want false by default")
+	}
+}
+
+func TestParseSSHOptionsRejectsUnknownBot(t *testing.T) {
+	hostKey := filepath.Join(t.TempDir(), "host_ed25519")
+	var out bytes.Buffer
+
+	_, err := parseSSHOptions([]string{"-bot", "missing"}, &out, hostKey)
+	if err == nil {
+		t.Fatal("parseSSHOptions returned nil error, want unknown bot")
 	}
 }

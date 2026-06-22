@@ -5,6 +5,8 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+
+	"github.com/vovakirdan/durak/internal/adapters/bot"
 )
 
 func TestNewServerBuildsWishServer(t *testing.T) {
@@ -44,7 +46,11 @@ func TestNewServerRejectsMissingHostKeyPath(t *testing.T) {
 }
 
 func TestNewLocalGameCreatesPlayableGame(t *testing.T) {
-	game, err := NewLocalGame(context.Background())
+	game, err := NewLocalGame(context.Background(), &GameOptions{
+		Bot:    bot.ControllerRandom,
+		Seed:   42,
+		Seeded: true,
+	})
 	if err != nil {
 		t.Fatalf("NewLocalGame returned error: %v", err)
 	}
@@ -55,5 +61,12 @@ func TestNewLocalGameCreatesPlayableGame(t *testing.T) {
 	}
 	if state.MatchID == "" || len(state.LegalActions) == 0 {
 		t.Fatalf("state = %+v, want playable state", state)
+	}
+}
+
+func TestNewLocalGameRejectsUnknownBot(t *testing.T) {
+	_, err := NewLocalGame(context.Background(), &GameOptions{Bot: "missing"})
+	if !errors.Is(err, bot.ErrUnknownController) {
+		t.Fatalf("error = %v, want ErrUnknownController", err)
 	}
 }
