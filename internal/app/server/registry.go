@@ -19,6 +19,8 @@ var (
 	ErrInvalidTable = errors.New("invalid table")
 	// ErrSeatUnavailable means a seat cannot join or act in this table.
 	ErrSeatUnavailable = errors.New("seat unavailable")
+	// ErrSeatOccupied means a human seat already has a live session.
+	ErrSeatOccupied = errors.New("seat occupied")
 	// ErrStaleState means the caller used an older state version.
 	ErrStaleState = errors.New("stale state")
 )
@@ -27,12 +29,6 @@ var (
 type Registry struct {
 	mu     sync.Mutex
 	tables map[string]*table
-}
-
-type table struct {
-	mu   sync.Mutex
-	game *client.LocalGame
-	seat domain.Seat
 }
 
 // NewRegistry creates an empty in-memory table registry.
@@ -50,18 +46,14 @@ func (r *Registry) TableCount() int {
 	return len(r.tables)
 }
 
-// CreateTable registers one LocalGame under id and returns its playable state.
-func (r *Registry) CreateTable(ctx context.Context, id string, game *client.LocalGame) (client.State, error) {
-	if r == nil || id == "" || game == nil {
+// CreateTable registers one in-memory table under id and returns its first human state.
+func (r *Registry) CreateTable(ctx context.Context, id string, options *TableOptions) (client.State, error) {
+	if r == nil || id == "" || options == nil {
 		return client.State{}, ErrInvalidTable
 	}
-	state, err := game.Advance(ctx)
+	created, err := newTable(ctx, options)
 	if err != nil {
-		return state, err
-	}
-	created := &table{
-		game: game,
-		seat: domain.Seat(state.Seat),
+		return client.State{}, err
 	}
 
 	r.mu.Lock()
@@ -70,10 +62,10 @@ func (r *Registry) CreateTable(ctx context.Context, id string, game *client.Loca
 		return client.State{}, fmt.Errorf("%w: %s", ErrTableExists, id)
 	}
 	r.tables[id] = created
-	return state, nil
+	return created.stateForSeat(created.firstHumanSeat()), nil
 }
 
-// JoinTable returns the current state for the table's playable seat.
+// JoinTable reserves one human seat and returns its current state.
 func (r *Registry) JoinTable(id string, seat domain.Seat) (client.State, error) {
 	t, err := r.table(id)
 	if err != nil {
@@ -81,10 +73,40 @@ func (r *Registry) JoinTable(id string, seat domain.Seat) (client.State, error) 
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if seat != t.seat {
-		return client.State{}, fmt.Errorf("%w: seat %d", ErrSeatUnavailable, seat)
+	return t.joinSeat(seat)
+}
+
+// ReleaseSeat frees a previously joined human seat.
+func (r *Registry) ReleaseSeat(id string, seat domain.Seat) error {
+	t, err := r.table(id)
+	if err != nil {
+		return err
 	}
-	return t.game.State(), nil
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.releaseSeat(seat)
+}
+
+// State returns the current table state for one seat.
+func (r *Registry) State(id string, seat domain.Seat) (client.State, error) {
+	t, err := r.table(id)
+	if err != nil {
+		return client.State{}, err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.state(seat)
+}
+
+// Advance runs controller turns and returns the current table state for one seat.
+func (r *Registry) Advance(ctx context.Context, id string, seat domain.Seat) (client.State, error) {
+	t, err := r.table(id)
+	if err != nil {
+		return client.State{}, err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.advance(ctx, seat)
 }
 
 // SubmitAction applies an action only if the caller's state version is current.
@@ -101,18 +123,7 @@ func (r *Registry) SubmitAction(
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	state := t.game.State()
-	if seat != t.seat {
-		return state, fmt.Errorf("%w: seat %d", ErrSeatUnavailable, seat)
-	}
-	if state.Version != version {
-		return state, fmt.Errorf("%w: got %d want %d", ErrStaleState, version, state.Version)
-	}
-	if _, err := t.game.SubmitAction(ctx, actionID); err != nil {
-		return state, err
-	}
-	return t.game.Advance(ctx)
+	return t.submitAction(ctx, seat, version, actionID)
 }
 
 // Concede gives up the current match for the joined table seat.
@@ -123,12 +134,7 @@ func (r *Registry) Concede(ctx context.Context, id string, seat domain.Seat) (cl
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	state := t.game.State()
-	if seat != t.seat {
-		return state, fmt.Errorf("%w: seat %d", ErrSeatUnavailable, seat)
-	}
-	return t.game.Concede(ctx)
+	return t.concede(ctx, seat)
 }
 
 // NextMatch starts the next match for the joined table seat.
@@ -139,16 +145,7 @@ func (r *Registry) NextMatch(ctx context.Context, id string, seat domain.Seat) (
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-
-	state := t.game.State()
-	if seat != t.seat {
-		return state, fmt.Errorf("%w: seat %d", ErrSeatUnavailable, seat)
-	}
-	state, err = t.game.NextMatch(ctx)
-	if err != nil {
-		return state, err
-	}
-	return t.game.Advance(ctx)
+	return t.nextMatch(ctx, seat)
 }
 
 func (r *Registry) table(id string) (*table, error) {

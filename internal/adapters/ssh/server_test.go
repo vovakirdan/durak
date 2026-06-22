@@ -5,8 +5,10 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/vovakirdan/durak/internal/adapters/bot"
+	"github.com/vovakirdan/durak/internal/app/server"
 )
 
 func TestNewServerBuildsWishServer(t *testing.T) {
@@ -57,26 +59,97 @@ func TestNewGameFactoryReusesSharedTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newGameFactory returned error: %v", err)
 	}
-	first, err := factory(context.Background())
+	first, err := factory(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("first factory call returned error: %v", err)
 	}
+	second, err := factory(context.Background(), []string{"seat", "1"})
+	if err != nil {
+		t.Fatalf("second factory call returned error: %v", err)
+	}
 	state := first.State()
+	acting := first
+	other := second
+	if state.Attacker == 1 {
+		acting = second
+		other = first
+		state = second.State()
+	}
 	if len(state.LegalActions) == 0 {
 		t.Fatalf("state = %+v, want legal actions", state)
 	}
-	next, err := first.SubmitAction(context.Background(), state.LegalActions[0].ID)
+	next, err := acting.SubmitAction(context.Background(), state.LegalActions[0].ID)
 	if err != nil {
 		t.Fatalf("SubmitAction returned error: %v", err)
 	}
 
-	second, err := factory(context.Background())
-	if err != nil {
-		t.Fatalf("second factory call returned error: %v", err)
-	}
-	joined := second.State()
+	joined := other.State()
 	if joined.Version != next.Version {
 		t.Fatalf("joined version = %d, want shared version %d", joined.Version, next.Version)
+	}
+}
+
+func TestNewGameFactoryRejectsOccupiedSharedTableSeat(t *testing.T) {
+	factory, err := newGameFactory(&ServerOptions{
+		TableID: "table-1",
+		Game: GameOptions{
+			Bot:    bot.ControllerSimple,
+			Seed:   42,
+			Seeded: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newGameFactory returned error: %v", err)
+	}
+	if _, callErr := factory(context.Background(), nil); callErr != nil {
+		t.Fatalf("first factory call returned error: %v", callErr)
+	}
+
+	_, err = factory(context.Background(), []string{"seat", "0"})
+	if !errors.Is(err, server.ErrSeatOccupied) {
+		t.Fatalf("second factory call error = %v, want ErrSeatOccupied", err)
+	}
+}
+
+func TestNewGameFactoryReleasesSeatWhenSessionEnds(t *testing.T) {
+	factory, err := newGameFactory(&ServerOptions{
+		TableID: "table-1",
+		Game: GameOptions{
+			Bot:    bot.ControllerSimple,
+			Seed:   42,
+			Seeded: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newGameFactory returned error: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if _, err := factory(ctx, nil); err != nil {
+		t.Fatalf("factory call returned error: %v", err)
+	}
+	if _, err := factory(context.Background(), nil); !errors.Is(err, server.ErrSeatOccupied) {
+		t.Fatalf("second factory call error = %v, want ErrSeatOccupied", err)
+	}
+
+	cancel()
+	deadline := time.Now().Add(time.Second)
+	for {
+		game, err := factory(context.Background(), nil)
+		if err == nil {
+			if closer, ok := game.(interface{ Close() error }); ok {
+				if closeErr := closer.Close(); closeErr != nil {
+					t.Fatalf("Close returned error: %v", closeErr)
+				}
+			}
+			return
+		}
+		if !errors.Is(err, server.ErrSeatOccupied) {
+			t.Fatalf("factory after cancel error = %v, want retryable ErrSeatOccupied", err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("seat remained occupied after session context cancellation")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -96,6 +169,39 @@ func TestNewLocalGameCreatesPlayableGame(t *testing.T) {
 	}
 	if state.MatchID == "" || len(state.LegalActions) == 0 {
 		t.Fatalf("state = %+v, want playable state", state)
+	}
+}
+
+func TestSessionSeat(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+		want int
+	}{
+		{name: "default", want: 0},
+		{name: "explicit", args: []string{"seat", "1"}, want: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := sessionSeat(tc.args)
+			if err != nil {
+				t.Fatalf("sessionSeat returned error: %v", err)
+			}
+			if int(got) != tc.want {
+				t.Fatalf("seat = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSessionSeatRejectsInvalidCommand(t *testing.T) {
+	for _, args := range [][]string{
+		{"seat"},
+		{"seat", "-1"},
+		{"table", "demo"},
+	} {
+		if _, err := sessionSeat(args); !errors.Is(err, ErrInvalidSessionCommand) {
+			t.Fatalf("sessionSeat(%v) error = %v, want ErrInvalidSessionCommand", args, err)
+		}
 	}
 }
 

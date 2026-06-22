@@ -379,8 +379,9 @@ Current implementation: `go run ./cmd/durakd status`.
 
 ## Epic 5: Remote Multiplayer
 
-**Status:** First development SSH TUI exists. Prefer Wish-hosted terminal play;
-do not build HTTP/protobuf transport until a non-terminal client is real.
+**Status:** First development SSH TUI exists with in-memory seat-aware tables.
+Prefer Wish-hosted terminal play; do not build HTTP/protobuf transport until a
+non-terminal client is real.
 
 ### Task 15: Choose SSH or API Transport
 
@@ -481,6 +482,44 @@ make check
 
 Expected: multiple SSH sessions can join the same in-memory table while the
 daemon process is alive.
+
+### Task 19: Add Seat-Aware SSH Table Sessions
+
+**Files:**
+
+- Create: `docs/2026-06-22-seat-aware-ssh-tables-tasks.md`
+- Create: `internal/app/server/table.go`
+- Modify: `internal/app/server/registry.go`
+- Modify: `internal/app/server/table_game.go`
+- Modify: `internal/app/server/registry_test.go`
+- Modify: `internal/adapters/ssh/server.go`
+- Modify: `internal/adapters/ssh/server_test.go`
+- Modify: `internal/adapters/tui/model.go`
+- Modify: `internal/adapters/tui/model_test.go`
+- Modify: `README.md`
+
+**Steps:**
+
+1. Move shared table internals from `client.LocalGame` to a server-owned
+   `app.Series` and `app.Session`.
+2. Project `client.State` per seat so separate SSH sessions see separate hands
+   and legal actions.
+3. Reserve one live SSH session per human seat and release it on TUI close or
+   session cancellation.
+4. Parse SSH exec commands as `seat <n>`, defaulting to seat 0.
+5. Add periodic TUI refresh through the existing `Game.Advance` contract so one
+   session sees another seat's accepted move.
+6. Keep auth, reconnect identity, persistence, spectators, and protobuf out of
+   this task.
+7. Run:
+
+```sh
+go test ./cmd/durakd ./internal/adapters/ssh ./internal/adapters/tui ./internal/app/server
+make check
+```
+
+Expected: `durakd ssh -table demo` can host two local SSH TUI sessions attached
+as `seat 0` and `seat 1` to the same in-memory match.
 
 ## Execution Rules
 

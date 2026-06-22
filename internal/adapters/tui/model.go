@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/vovakirdan/durak/internal/app/client"
@@ -28,6 +29,14 @@ type Game interface {
 	Concede(context.Context) (client.State, error)
 	NextMatch(context.Context) (client.State, error)
 }
+
+type closeGame interface {
+	Close() error
+}
+
+type refreshMsg time.Time
+
+const refreshInterval = time.Second
 
 // NewModel creates a Bubble Tea model and advances controllers to the human turn.
 func NewModel(ctx context.Context, game Game) *Model {
@@ -60,13 +69,20 @@ func Run(ctx context.Context, in io.Reader, out io.Writer, game Game) error {
 
 // Init implements tea.Model.
 func (m *Model) Init() tea.Cmd {
-	return nil
+	if m == nil || m.game == nil {
+		return nil
+	}
+	return refreshTick()
 }
 
 // Update implements tea.Model.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
+		if _, ok := msg.(refreshMsg); ok {
+			m.refresh()
+			return m, refreshTick()
+		}
 		return m, nil
 	}
 	input := key.Key().Text
@@ -86,6 +102,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	switch key.String() {
 	case "ctrl+c", "q":
+		m.close()
 		return m, tea.Quit
 	case "enter":
 		m.submitBufferedAction()
@@ -123,6 +140,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.handleActionInput(input)
 		return m, nil
 	}
+}
+
+func refreshTick() tea.Cmd {
+	return tea.Tick(refreshInterval, func(t time.Time) tea.Msg {
+		return refreshMsg(t)
+	})
 }
 
 func isTerminalOutput(out io.Writer) bool {
@@ -190,6 +213,26 @@ func (m *Model) submitAction(actionID string) {
 		return
 	}
 	m.state, m.err = m.game.Advance(m.ctx)
+}
+
+func (m *Model) refresh() {
+	if m == nil || m.game == nil {
+		return
+	}
+	m.state, m.err = m.game.Advance(m.ctx)
+}
+
+func (m *Model) close() {
+	if m == nil || m.game == nil {
+		return
+	}
+	closer, ok := m.game.(closeGame)
+	if !ok {
+		return
+	}
+	if err := closer.Close(); err != nil {
+		m.err = err
+	}
 }
 
 func isDigits(value string) bool {
