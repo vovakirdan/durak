@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/vovakirdan/durak/internal/app"
@@ -142,6 +143,38 @@ func TestUpdateHandlesNilGameCommands(t *testing.T) {
 	}
 }
 
+func TestUpdateClosesGameOnQuit(t *testing.T) {
+	game := &closeSpyGame{state: client.State{MatchID: "match-1"}}
+	model := &Model{ctx: context.Background(), game: game, state: game.state}
+
+	_, cmd := model.Update(keyPress("q"))
+
+	if cmd == nil {
+		t.Fatal("cmd = nil, want quit command")
+	}
+	if !game.closed {
+		t.Fatal("closed = false, want close on quit")
+	}
+}
+
+func TestUpdateRefreshesOnTick(t *testing.T) {
+	game := &closeSpyGame{state: client.State{MatchID: "match-1", Version: 1}}
+	model := &Model{ctx: context.Background(), game: game, state: game.state}
+
+	updated, cmd := model.Update(refreshMsg(time.Now()))
+	next := updated.(*Model)
+
+	if cmd == nil {
+		t.Fatal("cmd = nil, want next refresh tick")
+	}
+	if game.advanceCalls != 1 {
+		t.Fatalf("advance calls = %d, want 1", game.advanceCalls)
+	}
+	if next.state.Version != 2 {
+		t.Fatalf("version = %d, want refreshed version 2", next.state.Version)
+	}
+}
+
 func TestUpdateStartsNextMatchAfterComplete(t *testing.T) {
 	game := testGame(t)
 	complete, err := game.Concede(context.Background())
@@ -192,4 +225,41 @@ type firstLegalController struct{}
 
 func (firstLegalController) Decide(_ context.Context, turn *app.TurnContext) (app.PlayerDecision, error) {
 	return app.ActionDecision(turn.LegalActions[0]), nil
+}
+
+type closeSpyGame struct {
+	state        client.State
+	closed       bool
+	advanceCalls int
+}
+
+func (g *closeSpyGame) State() client.State {
+	return g.state
+}
+
+func (g *closeSpyGame) SubmitAction(context.Context, string) (client.State, error) {
+	g.state.Version++
+	return g.state, nil
+}
+
+func (g *closeSpyGame) Advance(context.Context) (client.State, error) {
+	g.advanceCalls++
+	g.state.Version++
+	return g.state, nil
+}
+
+func (g *closeSpyGame) Concede(context.Context) (client.State, error) {
+	g.state.Phase = "complete"
+	return g.state, nil
+}
+
+func (g *closeSpyGame) NextMatch(context.Context) (client.State, error) {
+	g.state.MatchID = "match-2"
+	g.state.Phase = "attack"
+	return g.state, nil
+}
+
+func (g *closeSpyGame) Close() error {
+	g.closed = true
+	return nil
 }
