@@ -379,8 +379,8 @@ Current implementation: `go run ./cmd/durakd status`.
 
 ## Epic 5: Remote Multiplayer
 
-**Status:** Transport direction selected. Prefer Wish-hosted SSH TUI first; do
-not build HTTP/protobuf transport until a non-terminal client is real.
+**Status:** First development SSH TUI exists. Prefer Wish-hosted terminal play;
+do not build HTTP/protobuf transport until a non-terminal client is real.
 
 ### Task 15: Choose SSH or API Transport
 
@@ -395,6 +395,35 @@ not build HTTP/protobuf transport until a non-terminal client is real.
 2. If terminal multiplayer is still the target, prefer Wish-hosted TUI first.
 3. If non-terminal clients become real, add an API transport for the frozen proto.
 4. Do not build both transports in the same milestone.
+
+### Task 16: Add Development SSH TUI Daemon
+
+**Files:**
+
+- Create: `internal/adapters/ssh/server.go`
+- Create: `internal/adapters/ssh/server_test.go`
+- Modify: `cmd/durakd/main.go`
+- Modify: `cmd/durakd/main_test.go`
+- Modify: `internal/adapters/tui/model.go`
+- Modify: `go.mod`
+- Modify: `go.sum`
+
+**Steps:**
+
+1. Add Charm Wish as the SSH server dependency.
+2. Host one Bubble Tea TUI game per SSH session.
+3. Add `durakd ssh` with `-addr` and `-host-key`.
+4. Keep auth, shared tables, reconnects, persistence, and protobuf out of this
+   task.
+5. Run:
+
+```sh
+go test ./cmd/durakd ./internal/adapters/ssh ./internal/adapters/tui
+make check
+```
+
+Expected: checks pass, and `go run ./cmd/durakd ssh` accepts a local SSH TUI
+session.
 
 ## Execution Rules
 

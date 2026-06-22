@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/vovakirdan/durak/internal/app/client"
 )
 
@@ -34,6 +34,11 @@ func NewModel(ctx context.Context, game *client.LocalGame) *Model {
 	return model
 }
 
+// NewErrorModel creates a model that renders a startup error.
+func NewErrorModel(err error) *Model {
+	return &Model{ctx: context.Background(), err: err}
+}
+
 // Run starts the Bubble Tea program.
 func Run(ctx context.Context, in io.Reader, out io.Writer, game *client.LocalGame) error {
 	options := []tea.ProgramOption{tea.WithInput(in), tea.WithOutput(out)}
@@ -51,13 +56,14 @@ func (m *Model) Init() tea.Cmd {
 
 // Update implements tea.Model.
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	key, ok := msg.(tea.KeyMsg)
+	key, ok := msg.(tea.KeyPressMsg)
 	if !ok {
 		return m, nil
 	}
-	if len(key.Runes) > 1 {
-		for _, r := range key.Runes {
-			updated, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+	input := key.Key().Text
+	if len([]rune(input)) > 1 {
+		for _, r := range input {
+			updated, cmd := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 			next, ok := updated.(*Model)
 			if !ok {
 				return m, cmd
@@ -94,7 +100,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	default:
-		m.handleActionInput(key.String())
+		if input == "" {
+			input = key.String()
+		}
+		m.handleActionInput(input)
 		return m, nil
 	}
 }
@@ -111,7 +120,7 @@ func isTerminalOutput(out io.Writer) bool {
 }
 
 // View implements tea.Model.
-func (m *Model) View() string {
+func (m *Model) View() tea.View {
 	var b strings.Builder
 	if m.err != nil {
 		fmt.Fprintf(&b, "Error: %v\n\n", m.err)
@@ -121,7 +130,7 @@ func (m *Model) View() string {
 		fmt.Fprintf(&b, "\nAction: %s\n", m.actionInput)
 	}
 	b.WriteString("\nKeys: number action | enter submit | c concede | n next | q quit\n")
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 func (m *Model) handleActionInput(input string) {

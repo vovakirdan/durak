@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
+	sshadapter "github.com/vovakirdan/durak/internal/adapters/ssh"
 	"github.com/vovakirdan/durak/internal/app/server"
 )
 
@@ -16,14 +19,74 @@ func main() {
 	}
 }
 
-func run(_ context.Context, args []string, out io.Writer) error {
-	if len(args) > 1 {
-		return fmt.Errorf("unknown argument %q", args[1])
+func run(ctx context.Context, args []string, out io.Writer) error {
+	if len(args) == 0 {
+		return runStatus(out)
 	}
-	if len(args) == 1 && args[0] != "status" {
+	switch args[0] {
+	case "status":
+		if len(args) > 1 {
+			return fmt.Errorf("unknown argument %q", args[1])
+		}
+		return runStatus(out)
+	case "ssh":
+		return runSSH(ctx, args[1:], out)
+	default:
 		return fmt.Errorf("unknown command %q", args[0])
 	}
+}
+
+func runStatus(out io.Writer) error {
 	registry := server.NewRegistry()
 	_, err := fmt.Fprintf(out, "durakd status: ok tables=%d\n", registry.TableCount())
 	return err
+}
+
+func runSSH(_ context.Context, args []string, out io.Writer) error {
+	hostKeyPath, err := defaultHostKeyPath()
+	if err != nil {
+		return err
+	}
+	options, err := parseSSHOptions(args, out, hostKeyPath)
+	if err != nil {
+		return err
+	}
+	sshServer, err := sshadapter.NewServer(&options)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(out, "durakd ssh: listening on %s\n", sshServer.Addr); err != nil {
+		return err
+	}
+	return sshServer.ListenAndServe()
+}
+
+func parseSSHOptions(args []string, out io.Writer, hostKeyPath string) (sshadapter.ServerOptions, error) {
+	options := sshadapter.ServerOptions{
+		Addr:        sshadapter.DefaultAddr,
+		HostKeyPath: hostKeyPath,
+	}
+	flags := flag.NewFlagSet("durakd ssh", flag.ContinueOnError)
+	flags.SetOutput(out)
+	flags.StringVar(&options.Addr, "addr", options.Addr, "SSH listen address")
+	flags.StringVar(&options.HostKeyPath, "host-key", options.HostKeyPath, "SSH host key path")
+	if err := flags.Parse(args); err != nil {
+		return options, err
+	}
+	if flags.NArg() != 0 {
+		return options, fmt.Errorf("unknown argument %q", flags.Arg(0))
+	}
+	return options, nil
+}
+
+func defaultHostKeyPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("user config dir: %w", err)
+	}
+	dir = filepath.Join(dir, "durak")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("create config dir: %w", err)
+	}
+	return filepath.Join(dir, "durakd_ed25519"), nil
 }

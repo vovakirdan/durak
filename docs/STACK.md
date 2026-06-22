@@ -36,7 +36,7 @@
 ### Terminal TUI
 
 - **Type:** TUI.
-- **Framework/runtime:** Go with Charm Bubble Tea, Bubbles, and Lip Gloss.
+- **Framework/runtime:** Go with Charm Bubble Tea v2.
 - **Delivery or rendering approach:** Bubble Tea model/update/view loop backed by the same domain core used by the CLI.
 - **State/data access approach:** TUI owns presentation state only; match state remains in the game core/session layer.
 - **Why this choice fits:** Bubble Tea gives a mature Go-native TUI path and aligns directly with the later Wish SSH server story.
@@ -73,9 +73,9 @@
 - **Data access approach:** no storage access in the first implementation; future strategies may consume historical summaries through explicit ports.
 - **Why this choice fits:** supports simple bots now and future DSL/AI strategies without giving bots mutable engine internals. The OpenAI-compatible API shape covers OpenAI, OpenRouter, LiteLLM, vLLM/Ollama-compatible servers, and similar providers without binding the game to one CLI helper transport.
 
-### Future Daemon
+### Daemon
 
-- **Responsibility:** host SSH sessions, manage player identity, table/session lifecycle, persistence, and operational logs.
+- **Responsibility:** currently hosts development SSH TUI sessions; later manages player identity, table/session lifecycle, persistence, and operational logs.
 - **Language/runtime:** Go.
 - **Framework/approach:** standard Go service process with Wish for SSH.
 - **Validation/contracts:** daemon talks to the core through session/application services, not direct state mutation.
@@ -88,7 +88,7 @@
 - **Remote transport order:** SSH/Wish first, API/protobuf later only with a
   concrete second frontend or process-boundary requirement.
 - **Schema/documentation approach:** domain events and persisted records use versioned structs and stable serialization for replay/export compatibility. JSON is the first candidate because it is easy to inspect and export, not because it is the only acceptable format.
-- **Auth/session strategy:** none for local CLI; future SSH mode starts with SSH key identity or server-managed player aliases.
+- **Auth/session strategy:** none for local CLI or development SSH; hosted SSH later starts with SSH key identity or server-managed player aliases.
 - **Realtime approach:** local in-process event loop for CLI/TUI; one Bubble Tea program per SSH session under Wish for hosted play.
 - **Compatibility notes across parts:**
   - CLI, TUI, and SSH must call the same application/session layer.
@@ -134,7 +134,7 @@
 
 ## 10. Research Notes
 
-- Bubble Tea uses a model/update/view architecture for terminal UIs, which maps cleanly to a UI adapter over a separate domain core: https://pkg.go.dev/github.com/charmbracelet/bubbletea
+- Bubble Tea uses a model/update/view architecture for terminal UIs, which maps cleanly to a UI adapter over a separate domain core: https://pkg.go.dev/charm.land/bubbletea/v2
 - Wish provides SSH app middleware for Bubble Tea and creates a Bubble Tea program per SSH session: https://github.com/charmbracelet/wish and https://pkg.go.dev/charm.land/wish/v2/bubbletea
 - Ratatui is a strong Rust TUI library, but SSH-hosted TUI support is less direct for this product than Charm's Go stack: https://docs.rs/ratatui/latest/ratatui/
 - Textual is a strong Python TUI framework with terminal and browser serving, but it weakens the single-portable-binary and Go/Wish SSH path: https://textual.textualize.io/
