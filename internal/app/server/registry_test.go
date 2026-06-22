@@ -127,6 +127,54 @@ func TestRegistryReturnsCurrentStateOnSubmitError(t *testing.T) {
 	}
 }
 
+func TestRegistryConcedeAndNextMatch(t *testing.T) {
+	registry := NewRegistry()
+	state, err := registry.CreateTable(context.Background(), "table-1", testGame(t))
+	if err != nil {
+		t.Fatalf("CreateTable returned error: %v", err)
+	}
+
+	complete, err := registry.Concede(context.Background(), "table-1", domain.Seat(state.Seat))
+	if err != nil {
+		t.Fatalf("Concede returned error: %v", err)
+	}
+	if complete.Phase != "complete" {
+		t.Fatalf("phase = %q, want complete", complete.Phase)
+	}
+
+	next, err := registry.NextMatch(context.Background(), "table-1", domain.Seat(state.Seat))
+	if err != nil {
+		t.Fatalf("NextMatch returned error: %v", err)
+	}
+	if next.MatchID == complete.MatchID || next.Phase == "complete" {
+		t.Fatalf("next = %+v, want active next match", next)
+	}
+}
+
+func TestTableGameUsesSharedRegistryTable(t *testing.T) {
+	registry := NewRegistry()
+	state, err := registry.CreateTable(context.Background(), "table-1", testGame(t))
+	if err != nil {
+		t.Fatalf("CreateTable returned error: %v", err)
+	}
+	game, err := NewTableGame(registry, "table-1", domain.Seat(state.Seat))
+	if err != nil {
+		t.Fatalf("NewTableGame returned error: %v", err)
+	}
+
+	next, err := game.SubmitAction(context.Background(), state.LegalActions[0].ID)
+	if err != nil {
+		t.Fatalf("SubmitAction returned error: %v", err)
+	}
+	joined, err := registry.JoinTable("table-1", domain.Seat(state.Seat))
+	if err != nil {
+		t.Fatalf("JoinTable returned error: %v", err)
+	}
+	if joined.Version != next.Version {
+		t.Fatalf("joined version = %d, want %d", joined.Version, next.Version)
+	}
+}
+
 func testGame(t *testing.T) *client.LocalGame {
 	t.Helper()
 	game, err := client.NewLocalGame(context.Background(), &client.LocalGameOptions{

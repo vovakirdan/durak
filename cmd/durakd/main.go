@@ -74,6 +74,7 @@ func parseSSHOptions(args []string, out io.Writer, hostKeyPath string) (sshadapt
 	flags.StringVar(&options.Addr, "addr", options.Addr, "SSH listen address")
 	flags.StringVar(&options.Game.Bot, "bot", bot.ControllerSimple, "bot controller: simple, random, heuristic")
 	flags.StringVar(&options.HostKeyPath, "host-key", options.HostKeyPath, "SSH host key path")
+	flags.StringVar(&options.TableID, "table", "", "in-memory table id shared by SSH sessions")
 	flags.Var(&seed, "seed", "deterministic deal and bot seed")
 	if err := flags.Parse(args); err != nil {
 		return options, err

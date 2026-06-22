@@ -115,6 +115,42 @@ func (r *Registry) SubmitAction(
 	return t.game.Advance(ctx)
 }
 
+// Concede gives up the current match for the joined table seat.
+func (r *Registry) Concede(ctx context.Context, id string, seat domain.Seat) (client.State, error) {
+	t, err := r.table(id)
+	if err != nil {
+		return client.State{}, err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	state := t.game.State()
+	if seat != t.seat {
+		return state, fmt.Errorf("%w: seat %d", ErrSeatUnavailable, seat)
+	}
+	return t.game.Concede(ctx)
+}
+
+// NextMatch starts the next match for the joined table seat.
+func (r *Registry) NextMatch(ctx context.Context, id string, seat domain.Seat) (client.State, error) {
+	t, err := r.table(id)
+	if err != nil {
+		return client.State{}, err
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	state := t.game.State()
+	if seat != t.seat {
+		return state, fmt.Errorf("%w: seat %d", ErrSeatUnavailable, seat)
+	}
+	state, err = t.game.NextMatch(ctx)
+	if err != nil {
+		return state, err
+	}
+	return t.game.Advance(ctx)
+}
+
 func (r *Registry) table(id string) (*table, error) {
 	if r == nil || id == "" {
 		return nil, ErrTableNotFound

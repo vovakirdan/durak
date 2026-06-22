@@ -39,6 +39,7 @@ func TestParseSSHOptions(t *testing.T) {
 		"-addr", "127.0.0.1:0",
 		"-bot", "random",
 		"-seed", "42",
+		"-table", "demo",
 	}, &out, hostKey)
 	if err != nil {
 		t.Fatalf("parseSSHOptions returned error: %v", err)
@@ -55,6 +56,9 @@ func TestParseSSHOptions(t *testing.T) {
 	}
 	if options.Game.Seed != 42 || !options.Game.Seeded {
 		t.Fatalf("Game seed = %d seeded=%v, want 42 true", options.Game.Seed, options.Game.Seeded)
+	}
+	if options.TableID != "demo" {
+		t.Fatalf("TableID = %q, want demo", options.TableID)
 	}
 }
 

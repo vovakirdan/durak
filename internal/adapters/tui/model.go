@@ -11,17 +11,26 @@ import (
 	"github.com/vovakirdan/durak/internal/app/client"
 )
 
-// Model owns TUI presentation state. Game mutations stay in client.LocalGame.
+// Model owns TUI presentation state. Game mutations stay behind Game.
 type Model struct {
 	ctx         context.Context
-	game        *client.LocalGame
+	game        Game
 	state       client.State
 	actionInput string
 	err         error
 }
 
+// Game is the minimal client contract a TUI can drive.
+type Game interface {
+	State() client.State
+	SubmitAction(context.Context, string) (client.State, error)
+	Advance(context.Context) (client.State, error)
+	Concede(context.Context) (client.State, error)
+	NextMatch(context.Context) (client.State, error)
+}
+
 // NewModel creates a Bubble Tea model and advances controllers to the human turn.
-func NewModel(ctx context.Context, game *client.LocalGame) *Model {
+func NewModel(ctx context.Context, game Game) *Model {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -40,7 +49,7 @@ func NewErrorModel(err error) *Model {
 }
 
 // Run starts the Bubble Tea program.
-func Run(ctx context.Context, in io.Reader, out io.Writer, game *client.LocalGame) error {
+func Run(ctx context.Context, in io.Reader, out io.Writer, game Game) error {
 	options := []tea.ProgramOption{tea.WithInput(in), tea.WithOutput(out)}
 	if !isTerminalOutput(out) {
 		options = append(options, tea.WithoutRenderer())

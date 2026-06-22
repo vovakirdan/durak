@@ -452,6 +452,36 @@ make check
 Expected: SSH-hosted TUI sessions can be smoke-tested against each local bot
 kind without adding a remote API.
 
+### Task 18: Add In-Memory Shared SSH Table
+
+**Files:**
+
+- Modify: `internal/adapters/tui/model.go`
+- Modify: `internal/adapters/ssh/server.go`
+- Modify: `internal/adapters/ssh/server_test.go`
+- Modify: `internal/app/server/registry.go`
+- Create: `internal/app/server/table_game.go`
+- Modify: `cmd/durakd/main.go`
+- Modify: `README.md`
+
+**Steps:**
+
+1. Let the TUI depend on the minimal game contract instead of concrete
+   `client.LocalGame`.
+2. Add `durakd ssh -table <id>` for one in-memory table shared by SSH sessions.
+3. Reuse `internal/app/server.Registry` for serialized table mutation.
+4. Keep auth, persistence, reconnects, spectators, and true multi-human seats out
+   of this task.
+5. Run:
+
+```sh
+go test ./cmd/durakd ./internal/adapters/ssh ./internal/adapters/tui ./internal/app/server
+make check
+```
+
+Expected: multiple SSH sessions can join the same in-memory table while the
+daemon process is alive.
+
 ## Execution Rules
 
 - Finish Epic 1 before starting TUI.
