@@ -302,6 +302,9 @@ Expected: checks pass and a local TUI game can submit at least one legal action.
 
 ## Epic 3: Protocol Freeze
 
+**Status:** ADR accepted. Protobuf is deferred until a daemon process boundary
+or non-Go frontend makes the stable transport schema necessary.
+
 ### Task 11: Write Protocol ADR
 
 **Files:**

@@ -216,6 +216,7 @@ restricted workspaces without writing to the user-level Go cache.
 - [Heuristic Position Evaluation Tasks](docs/2026-06-16-heuristic-position-evaluation-tasks.md)
 - [Client Protocol and TUI Path Tasks](docs/2026-06-19-client-protocol-tui-tasks.md)
 - [Client Contract](docs/2026-06-19-client-contract-specs.md)
+- [Client Protocol ADR](docs/2026-06-19-client-protocol-adr.md)
 - [Feature Status Spreadsheet](docs/feature-status.csv)
 - [Stack](docs/STACK.md)
 - [Architecture](docs/ARCHITECTURE.md)
