@@ -343,8 +343,9 @@ Expected: tests pass.
 
 ## Epic 4: Daemon Prototype
 
-**Status:** In progress. Task 13 has a minimal in-memory table registry around
-`client.LocalGame`; no daemon binary or transport has been added.
+**Status:** Implemented through the first local daemon command. Task 13 has a
+minimal in-memory table registry around `client.LocalGame`; Task 14 adds
+`durakd status` without network transport.
 
 ### Task 13: Add Local Table Registry
 
@@ -373,6 +374,8 @@ Expected: tests pass.
 2. Start with a local-only development mode.
 3. Expose one health/status command or endpoint.
 4. Do not add auth until a remote transport exists.
+
+Current implementation: `go run ./cmd/durakd status`.
 
 ## Epic 5: Remote Multiplayer
 

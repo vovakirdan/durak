@@ -40,6 +40,16 @@ func NewRegistry() *Registry {
 	return &Registry{tables: make(map[string]*table)}
 }
 
+// TableCount returns the number of registered tables.
+func (r *Registry) TableCount() int {
+	if r == nil {
+		return 0
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.tables)
+}
+
 // CreateTable registers one LocalGame under id and returns its playable state.
 func (r *Registry) CreateTable(ctx context.Context, id string, game *client.LocalGame) (client.State, error) {
 	if r == nil || id == "" || game == nil {
