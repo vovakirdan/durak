@@ -72,8 +72,17 @@ go run ./cmd/durakd ssh -seed 42 -bot simple
 ssh localhost -p 23234
 ```
 
-Add `-table demo` to reuse one in-memory table across SSH sessions while the
-daemon process stays up.
+Without `-table`, every SSH session gets a separate local game against the
+selected bot. Add `-table demo` to create one in-memory two-human table while
+the daemon process stays up:
+
+```sh
+go run ./cmd/durakd ssh -seed 42 -table demo
+ssh localhost -p 23234 seat 0
+ssh localhost -p 23234 seat 1
+```
+
+Omitting the SSH command defaults to `seat 0`.
 
 Available player controllers for the opponent are `simple`, `random`,
 `heuristic`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The heuristic bot
@@ -225,6 +234,7 @@ restricted workspaces without writing to the user-level Go cache.
 - [Heuristic Position Evaluation](docs/2026-06-16-heuristic-position-evaluation-specs.md)
 - [Heuristic Position Evaluation Tasks](docs/2026-06-16-heuristic-position-evaluation-tasks.md)
 - [Client Protocol and TUI Path Tasks](docs/2026-06-19-client-protocol-tui-tasks.md)
+- [Seat-Aware SSH Tables Tasks](docs/2026-06-22-seat-aware-ssh-tables-tasks.md)
 - [Client Contract](docs/2026-06-19-client-contract-specs.md)
 - [Client Protocol ADR](docs/2026-06-19-client-protocol-adr.md)
 - [Feature Status Spreadsheet](docs/feature-status.csv)
