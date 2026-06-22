@@ -97,10 +97,18 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case "c":
 		m.actionInput = ""
+		if m.game == nil {
+			m.err = client.ErrInvalidLocalGame
+			return m, nil
+		}
 		m.state, m.err = m.game.Concede(m.ctx)
 		return m, nil
 	case "n":
 		m.actionInput = ""
+		if m.game == nil {
+			m.err = client.ErrInvalidLocalGame
+			return m, nil
+		}
 		if m.state.Phase == "complete" {
 			m.state, m.err = m.game.NextMatch(m.ctx)
 			if m.err == nil {

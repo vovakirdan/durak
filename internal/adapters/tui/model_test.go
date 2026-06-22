@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -124,6 +125,20 @@ func TestUpdateSubmitsBufferedActionOnEnter(t *testing.T) {
 	}
 	if next.err == nil {
 		t.Fatal("err = nil, want submit attempt to reach missing game")
+	}
+}
+
+func TestUpdateHandlesNilGameCommands(t *testing.T) {
+	for _, input := range []string{"c", "n"} {
+		model := NewModel(context.Background(), nil)
+		model.state.Phase = "complete"
+
+		updated, _ := model.Update(keyPress(input))
+		next := updated.(*Model)
+
+		if !errors.Is(next.err, client.ErrInvalidLocalGame) {
+			t.Fatalf("key %q err = %v, want ErrInvalidLocalGame", input, next.err)
+		}
 	}
 }
 

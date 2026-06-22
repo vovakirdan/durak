@@ -161,6 +161,9 @@ func TestTableGameUsesSharedRegistryTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewTableGame returned error: %v", err)
 	}
+	if len(state.LegalActions) == 0 {
+		t.Fatalf("state = %+v, want legal actions", state)
+	}
 
 	next, err := game.SubmitAction(context.Background(), state.LegalActions[0].ID)
 	if err != nil {
