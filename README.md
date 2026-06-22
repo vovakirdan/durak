@@ -59,6 +59,12 @@ go run ./cmd/durak -seed 42 -seats 4 -human-seat 0 \
   -bot simple -p2 random -p3 ai-raw-mock
 ```
 
+Run the local TUI prototype with:
+
+```sh
+go run ./cmd/durak tui -seed 42 -bot simple
+```
+
 Available player controllers for the opponent are `simple`, `random`,
 `heuristic`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The heuristic bot
 uses the first seat-view position evaluator and action ranking layer. The AI

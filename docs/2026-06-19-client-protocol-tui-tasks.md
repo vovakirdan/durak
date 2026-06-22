@@ -181,6 +181,10 @@ Expected: tests pass.
 
 ## Epic 2: TUI Prototype
 
+**Status:** Implemented. Tasks 6-10 have the first local Bubble Tea prototype
+under `internal/adapters/tui` and `durak tui`; visual polish is intentionally
+out of scope until the contract is exercised.
+
 ### Task 6: Add TUI Entrypoint
 
 **Files:**

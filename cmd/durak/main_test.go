@@ -57,6 +57,20 @@ func TestRunArenaCompletesMatches(t *testing.T) {
 	}
 }
 
+func TestRunTUIStartsAndQuits(t *testing.T) {
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+
+	err := run(t.Context(), []string{
+		"tui",
+		"-seed", "42",
+		"-bot", "simple",
+	}, strings.NewReader("q"), &out, &errOut)
+	if err != nil {
+		t.Fatalf("run tui returned error: %v; stderr=%q", err, errOut.String())
+	}
+}
+
 func TestRunArenaAcceptsHeuristicController(t *testing.T) {
 	var out bytes.Buffer
 	var errOut bytes.Buffer
