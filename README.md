@@ -59,6 +59,12 @@ go run ./cmd/durak -seed 42 -seats 4 -human-seat 0 \
   -bot simple -p2 random -p3 ai-raw-mock
 ```
 
+Run the local TUI prototype with:
+
+```sh
+go run ./cmd/durak tui -seed 42 -bot simple
+```
+
 Available player controllers for the opponent are `simple`, `random`,
 `heuristic`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The heuristic bot
 uses the first seat-view position evaluator and action ranking layer. The AI
@@ -208,6 +214,10 @@ restricted workspaces without writing to the user-level Go cache.
 - [Evaluation v2 Pressure and Memory](docs/2026-06-16-evaluation-v2-pressure-memory-specs.md)
 - [Heuristic Position Evaluation](docs/2026-06-16-heuristic-position-evaluation-specs.md)
 - [Heuristic Position Evaluation Tasks](docs/2026-06-16-heuristic-position-evaluation-tasks.md)
+- [Client Protocol and TUI Path Tasks](docs/2026-06-19-client-protocol-tui-tasks.md)
+- [Client Contract](docs/2026-06-19-client-contract-specs.md)
+- [Client Protocol ADR](docs/2026-06-19-client-protocol-adr.md)
+- [Feature Status Spreadsheet](docs/feature-status.csv)
 - [Stack](docs/STACK.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Project Rules](docs/PROJECT_RULES.md)

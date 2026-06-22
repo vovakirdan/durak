@@ -36,6 +36,9 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	if len(args) > 0 && args[0] == "analyze" {
 		return runAnalyze(ctx, args[1:], out, errOut)
 	}
+	if len(args) > 0 && args[0] == "tui" {
+		return runTUI(ctx, args[1:], in, out, errOut)
+	}
 	return runPlay(ctx, args, in, out, errOut)
 }
 

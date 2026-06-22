@@ -66,6 +66,8 @@
 - **Primary responsibilities:** create remote terminal sessions, map SSH identity to player identity, attach users to tables, and host a Bubble Tea program per session.
 - **Internal structure:** Wish server setup, auth/session middleware, table/session registry, and TUI program factory.
 - **Key dependencies:** application/session layer, future persistence adapter, and Charm Wish.
+- **Transport decision:** Wish-hosted SSH is the next remote surface. Do not add
+  HTTP, gRPC, or protobuf transport until a real non-terminal client needs it.
 
 ## 5. Execution and Service Components
 
@@ -360,6 +362,9 @@ provider integration.
 5. TUI submits player actions to the application layer.
 6. Match session serializes commands and mutates game state in order.
 7. Persistence adapter records events and final summaries once enabled.
+
+HTTP or protobuf APIs are not part of this flow. They should be reconsidered
+only after the SSH/TUI table lifecycle exposes a concrete second-client need.
 
 ### 13.6 Future Match Completion Persistence Flow
 
