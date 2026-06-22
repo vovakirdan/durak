@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	tea "charm.land/bubbletea/v2"
 	wish "charm.land/wish/v2"
@@ -13,6 +14,7 @@ import (
 	"github.com/vovakirdan/durak/internal/adapters/tui"
 	"github.com/vovakirdan/durak/internal/app"
 	"github.com/vovakirdan/durak/internal/app/client"
+	"github.com/vovakirdan/durak/internal/app/server"
 	"github.com/vovakirdan/durak/internal/domain"
 )
 
@@ -26,8 +28,8 @@ var (
 	ErrMissingHostKeyPath = errors.New("missing ssh host key path")
 )
 
-// GameFactory creates one local game for a single SSH session.
-type GameFactory func(context.Context) (*client.LocalGame, error)
+// GameFactory creates one TUI-driving game for a single SSH session.
+type GameFactory func(context.Context) (tui.Game, error)
 
 // GameOptions configures the local game created for each SSH session.
 type GameOptions struct {
@@ -42,6 +44,7 @@ type ServerOptions struct {
 	HostKeyPath string
 	NewGame     GameFactory
 	Game        GameOptions
+	TableID     string
 }
 
 // NewServer builds a Wish SSH server that hosts one TUI game per session.
@@ -58,12 +61,10 @@ func NewServer(options *ServerOptions) (*gossh.Server, error) {
 	}
 	newGame := options.NewGame
 	if newGame == nil {
-		gameOptions := options.Game
-		if err := validateGameOptions(&gameOptions); err != nil {
+		var err error
+		newGame, err = newGameFactory(options)
+		if err != nil {
 			return nil, err
-		}
-		newGame = func(ctx context.Context) (*client.LocalGame, error) {
-			return NewLocalGame(ctx, &gameOptions)
 		}
 	}
 
@@ -79,6 +80,36 @@ func NewServer(options *ServerOptions) (*gossh.Server, error) {
 		wish.WithHostKeyPath(options.HostKeyPath),
 	}
 	return wish.NewServer(sshOptions...)
+}
+
+func newGameFactory(options *ServerOptions) (GameFactory, error) {
+	gameOptions := options.Game
+	if err := validateGameOptions(&gameOptions); err != nil {
+		return nil, err
+	}
+	if options.TableID == "" {
+		return func(ctx context.Context) (tui.Game, error) {
+			return NewLocalGame(ctx, &gameOptions)
+		}, nil
+	}
+	registry := server.NewRegistry()
+	var mu sync.Mutex
+	created := false
+	return func(ctx context.Context) (tui.Game, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !created {
+			game, err := NewLocalGame(ctx, &gameOptions)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := registry.CreateTable(ctx, options.TableID, game); err != nil {
+				return nil, err
+			}
+			created = true
+		}
+		return server.NewTableGame(registry, options.TableID, domain.Seat(0))
+	}, nil
 }
 
 // NewLocalGame creates the default one-human SSH game against a simple bot.

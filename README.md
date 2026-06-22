@@ -72,6 +72,9 @@ go run ./cmd/durakd ssh -seed 42 -bot simple
 ssh localhost -p 23234
 ```
 
+Add `-table demo` to reuse one in-memory table across SSH sessions while the
+daemon process stays up.
+
 Available player controllers for the opponent are `simple`, `random`,
 `heuristic`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The heuristic bot
 uses the first seat-view position evaluator and action ranking layer. The AI

@@ -45,6 +45,41 @@ func TestNewServerRejectsMissingHostKeyPath(t *testing.T) {
 	}
 }
 
+func TestNewGameFactoryReusesSharedTable(t *testing.T) {
+	factory, err := newGameFactory(&ServerOptions{
+		TableID: "table-1",
+		Game: GameOptions{
+			Bot:    bot.ControllerSimple,
+			Seed:   42,
+			Seeded: true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("newGameFactory returned error: %v", err)
+	}
+	first, err := factory(context.Background())
+	if err != nil {
+		t.Fatalf("first factory call returned error: %v", err)
+	}
+	state := first.State()
+	if len(state.LegalActions) == 0 {
+		t.Fatalf("state = %+v, want legal actions", state)
+	}
+	next, err := first.SubmitAction(context.Background(), state.LegalActions[0].ID)
+	if err != nil {
+		t.Fatalf("SubmitAction returned error: %v", err)
+	}
+
+	second, err := factory(context.Background())
+	if err != nil {
+		t.Fatalf("second factory call returned error: %v", err)
+	}
+	joined := second.State()
+	if joined.Version != next.Version {
+		t.Fatalf("joined version = %d, want shared version %d", joined.Version, next.Version)
+	}
+}
+
 func TestNewLocalGameCreatesPlayableGame(t *testing.T) {
 	game, err := NewLocalGame(context.Background(), &GameOptions{
 		Bot:    bot.ControllerRandom,
