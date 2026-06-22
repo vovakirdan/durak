@@ -46,6 +46,7 @@ The next useful capability is true seat-aware table play:
 
 **Files:**
 
+- Create: `internal/app/server/table.go`
 - Create or modify: `internal/app/server/registry.go`
 - Create or modify: `internal/app/server/table_game.go`
 - Modify: `internal/app/server/registry_test.go`
