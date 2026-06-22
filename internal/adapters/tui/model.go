@@ -13,10 +13,11 @@ import (
 
 // Model owns TUI presentation state. Game mutations stay in client.LocalGame.
 type Model struct {
-	ctx   context.Context
-	game  *client.LocalGame
-	state client.State
-	err   error
+	ctx         context.Context
+	game        *client.LocalGame
+	state       client.State
+	actionInput string
+	err         error
 }
 
 // NewModel creates a Bubble Tea model and advances controllers to the human turn.
@@ -71,10 +72,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "ctrl+c", "q":
 		return m, tea.Quit
+	case "enter":
+		m.submitBufferedAction()
+		return m, nil
+	case "backspace":
+		if m.actionInput != "" {
+			m.actionInput = m.actionInput[:len(m.actionInput)-1]
+		}
+		return m, nil
 	case "c":
+		m.actionInput = ""
 		m.state, m.err = m.game.Concede(m.ctx)
 		return m, nil
 	case "n":
+		m.actionInput = ""
 		if m.state.Phase == "complete" {
 			m.state, m.err = m.game.NextMatch(m.ctx)
 			if m.err == nil {
@@ -83,7 +94,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	default:
-		m.submitAction(key.String())
+		m.handleActionInput(key.String())
 		return m, nil
 	}
 }
@@ -106,12 +117,46 @@ func (m *Model) View() string {
 		fmt.Fprintf(&b, "Error: %v\n\n", m.err)
 	}
 	renderState(&b, &m.state)
-	b.WriteString("\nKeys: 1-9 action | c concede | n next | q quit\n")
+	if m.actionInput != "" {
+		fmt.Fprintf(&b, "\nAction: %s\n", m.actionInput)
+	}
+	b.WriteString("\nKeys: number action | enter submit | c concede | n next | q quit\n")
 	return b.String()
+}
+
+func (m *Model) handleActionInput(input string) {
+	if !isDigits(input) {
+		m.actionInput = ""
+		return
+	}
+	candidate := m.actionInput + input
+	exact, longer := actionIDMatch(&m.state, candidate)
+	switch {
+	case exact && !longer:
+		m.actionInput = ""
+		m.submitAction(candidate)
+	case exact || longer:
+		m.actionInput = candidate
+	default:
+		m.actionInput = ""
+	}
+}
+
+func (m *Model) submitBufferedAction() {
+	if m.actionInput == "" {
+		return
+	}
+	actionID := m.actionInput
+	m.actionInput = ""
+	m.submitAction(actionID)
 }
 
 func (m *Model) submitAction(actionID string) {
 	if m.state.Phase == "complete" || !hasAction(&m.state, actionID) {
+		return
+	}
+	if m.game == nil {
+		m.err = client.ErrInvalidLocalGame
 		return
 	}
 	m.state, m.err = m.game.SubmitAction(m.ctx, actionID)
@@ -119,6 +164,33 @@ func (m *Model) submitAction(actionID string) {
 		return
 	}
 	m.state, m.err = m.game.Advance(m.ctx)
+}
+
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func actionIDMatch(state *client.State, actionID string) (exact, longer bool) {
+	if state == nil {
+		return false, false
+	}
+	for _, action := range state.LegalActions {
+		if action.ID == actionID {
+			exact = true
+		}
+		if strings.HasPrefix(action.ID, actionID) && len(action.ID) > len(actionID) {
+			longer = true
+		}
+	}
+	return exact, longer
 }
 
 func hasAction(state *client.State, actionID string) bool {

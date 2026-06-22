@@ -105,6 +105,28 @@ func TestRegistryRejectsStaleActionVersion(t *testing.T) {
 	}
 }
 
+func TestRegistryReturnsCurrentStateOnSubmitError(t *testing.T) {
+	registry := NewRegistry()
+	state, err := registry.CreateTable(context.Background(), "table-1", testGame(t))
+	if err != nil {
+		t.Fatalf("CreateTable returned error: %v", err)
+	}
+
+	got, err := registry.SubmitAction(
+		context.Background(),
+		"table-1",
+		domain.Seat(state.Seat),
+		state.Version,
+		"999",
+	)
+	if !errors.Is(err, client.ErrUnknownActionID) {
+		t.Fatalf("SubmitAction error = %v, want ErrUnknownActionID", err)
+	}
+	if got.MatchID != state.MatchID || got.Version != state.Version || got.Phase != state.Phase {
+		t.Fatalf("state = %+v, want original %+v", got, state)
+	}
+}
+
 func testGame(t *testing.T) *client.LocalGame {
 	t.Helper()
 	game, err := client.NewLocalGame(context.Background(), &client.LocalGameOptions{

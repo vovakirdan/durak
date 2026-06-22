@@ -89,6 +89,43 @@ func TestLocalGameConcedeAndNextMatch(t *testing.T) {
 	}
 }
 
+func TestLocalGameNextMatchCanRetryAfterStartFailure(t *testing.T) {
+	deal := fixedDeal()
+	shuffler := deal.Shuffler
+	deals := 0
+	var cancel context.CancelFunc
+	deal.Shuffler = domain.ShuffleFunc(func(cards []domain.Card) {
+		shuffler.Shuffle(cards)
+		if deals == 1 && cancel != nil {
+			cancel()
+		}
+		deals++
+	})
+	game := mustLocalGameWithDeal(t, domain.Seat(0), firstLegalControllers(domain.Seat(1)), deal)
+	complete, err := game.Concede(context.Background())
+	if err != nil {
+		t.Fatalf("Concede returned error: %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	failed, err := game.NextMatch(ctx)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("NextMatch canceled error = %v, want context.Canceled", err)
+	}
+	if failed.MatchID != complete.MatchID || failed.Phase != "complete" {
+		t.Fatalf("failed state = %+v, want completed original match", failed)
+	}
+
+	next, err := game.NextMatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextMatch retry returned error: %v", err)
+	}
+	if next.MatchID != "match-1-2" || next.Phase == "complete" {
+		t.Fatalf("next state = %+v, want active match-1-2 after retry", next)
+	}
+}
+
 func TestLocalGameNextMatchRequiresCompletedMatch(t *testing.T) {
 	game := mustLocalGame(t, domain.Seat(0), firstLegalControllers(domain.Seat(1)))
 
@@ -139,6 +176,27 @@ func mustLocalGame(
 		PlayerCount: 2,
 		HumanSeat:   humanSeat,
 		Deal:        fixedDeal(),
+		Controllers: controllers,
+	})
+	if err != nil {
+		t.Fatalf("NewLocalGame returned error: %v", err)
+	}
+	return game
+}
+
+func mustLocalGameWithDeal(
+	t *testing.T,
+	humanSeat domain.Seat,
+	controllers map[domain.Seat]app.PlayerController,
+	deal domain.DealOptions,
+) *LocalGame {
+	t.Helper()
+	game, err := NewLocalGame(context.Background(), &LocalGameOptions{
+		SeriesID:    "series-1",
+		BaseMatchID: "match-1",
+		PlayerCount: 2,
+		HumanSeat:   humanSeat,
+		Deal:        deal,
 		Controllers: controllers,
 	})
 	if err != nil {

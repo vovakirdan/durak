@@ -109,9 +109,8 @@ func (r *Registry) SubmitAction(
 	if state.Version != version {
 		return state, fmt.Errorf("%w: got %d want %d", ErrStaleState, version, state.Version)
 	}
-	next, err := t.game.SubmitAction(ctx, actionID)
-	if err != nil {
-		return next, err
+	if _, err := t.game.SubmitAction(ctx, actionID); err != nil {
+		return state, err
 	}
 	return t.game.Advance(ctx)
 }

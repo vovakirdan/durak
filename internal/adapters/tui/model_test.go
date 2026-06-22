@@ -83,6 +83,50 @@ func TestUpdateHandlesPastedKeys(t *testing.T) {
 	}
 }
 
+func TestUpdateBuffersAmbiguousActionID(t *testing.T) {
+	model := &Model{state: client.State{
+		LegalActions: []client.LegalAction{
+			{ID: "1", Label: "attack 6C"},
+			{ID: "10", Label: "take"},
+		},
+	}}
+
+	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	next := updated.(*Model)
+
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil while action id is ambiguous", cmd)
+	}
+	if next.actionInput != "1" {
+		t.Fatalf("actionInput = %q, want buffered 1", next.actionInput)
+	}
+	if next.err != nil {
+		t.Fatalf("err = %v, want nil before submit", next.err)
+	}
+}
+
+func TestUpdateSubmitsBufferedActionOnEnter(t *testing.T) {
+	model := &Model{
+		state: client.State{
+			LegalActions: []client.LegalAction{
+				{ID: "1", Label: "attack 6C"},
+				{ID: "10", Label: "take"},
+			},
+		},
+		actionInput: "1",
+	}
+
+	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	next := updated.(*Model)
+
+	if next.actionInput != "" {
+		t.Fatalf("actionInput = %q, want cleared after enter", next.actionInput)
+	}
+	if next.err == nil {
+		t.Fatal("err = nil, want submit attempt to reach missing game")
+	}
+}
+
 func TestUpdateStartsNextMatchAfterComplete(t *testing.T) {
 	game := testGame(t)
 	complete, err := game.Concede(context.Background())

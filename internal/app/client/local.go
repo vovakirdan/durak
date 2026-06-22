@@ -44,6 +44,7 @@ type LocalGame struct {
 	humanSeat          domain.Seat
 	baseMatchID        app.MatchID
 	matchID            app.MatchID
+	completedMatchID   app.MatchID
 	matchNumber        int
 	turnNumber         int
 	version            uint64
@@ -195,12 +196,16 @@ func (g *LocalGame) NextMatch(ctx context.Context) (State, error) {
 	if g.State().Phase != "complete" {
 		return g.State(), ErrMatchInProgress
 	}
-	if err := g.series.CompleteMatch(g.session); err != nil {
-		return g.State(), err
+	if g.completedMatchID != g.matchID {
+		if err := g.series.CompleteMatch(g.session); err != nil {
+			return g.State(), err
+		}
+		g.completedMatchID = g.matchID
 	}
 	if err := g.startNextMatch(ctx); err != nil {
-		return State{}, err
+		return g.State(), err
 	}
+	g.completedMatchID = ""
 	g.version++
 	return g.State(), nil
 }
@@ -251,9 +256,9 @@ func canonicalSeats(count int) []domain.Seat {
 }
 
 func (g *LocalGame) startNextMatch(ctx context.Context) error {
-	g.matchNumber++
+	matchNumber := g.matchNumber + 1
 	g.turnNumber = 0
-	matchID := localMatchID(g.baseMatchID, g.matchNumber)
+	matchID := localMatchID(g.baseMatchID, matchNumber)
 	session, _, err := g.series.StartMatch(ctx, &app.SeriesMatchOptions{
 		MatchID: matchID,
 		Deal:    g.deal,
@@ -263,5 +268,6 @@ func (g *LocalGame) startNextMatch(ctx context.Context) error {
 	}
 	g.session = session
 	g.matchID = matchID
+	g.matchNumber = matchNumber
 	return nil
 }
