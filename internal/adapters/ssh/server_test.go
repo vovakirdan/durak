@@ -9,6 +9,7 @@ import (
 
 	"github.com/vovakirdan/durak/internal/adapters/bot"
 	"github.com/vovakirdan/durak/internal/app/server"
+	"github.com/vovakirdan/durak/internal/domain"
 )
 
 func TestNewServerBuildsWishServer(t *testing.T) {
@@ -86,6 +87,40 @@ func TestNewGameFactoryReusesSharedTable(t *testing.T) {
 	joined := other.State()
 	if joined.Version != next.Version {
 		t.Fatalf("joined version = %d, want shared version %d", joined.Version, next.Version)
+	}
+}
+
+func TestNewGameFactoryUsesBotsForNonHumanTableSeats(t *testing.T) {
+	factory, err := newGameFactory(&ServerOptions{
+		TableID: "table-1",
+		Game: GameOptions{
+			Bot:    bot.ControllerSimple,
+			Seed:   42,
+			Seeded: true,
+		},
+		Table: server.TableOptions{
+			PlayerCount: 2,
+			HumanSeats:  []domain.Seat{0},
+		},
+	})
+	if err != nil {
+		t.Fatalf("newGameFactory returned error: %v", err)
+	}
+	game, err := factory(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("factory call returned error: %v", err)
+	}
+	state := game.State()
+	if state.Seat != 0 || len(state.LegalActions) == 0 {
+		t.Fatalf("state = %+v, want playable human seat", state)
+	}
+
+	next, err := game.SubmitAction(context.Background(), state.LegalActions[0].ID)
+	if err != nil {
+		t.Fatalf("SubmitAction returned error: %v", err)
+	}
+	if next.Seat != 0 || next.Version <= state.Version+1 {
+		t.Fatalf("next = %+v, want bot-advanced human state", next)
 	}
 }
 

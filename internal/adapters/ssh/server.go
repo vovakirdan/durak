@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"sync"
 
@@ -47,6 +48,7 @@ type ServerOptions struct {
 	HostKeyPath string
 	NewGame     GameFactory
 	Game        GameOptions
+	Table       server.TableOptions
 	TableID     string
 }
 
@@ -109,7 +111,10 @@ func newGameFactory(options *ServerOptions) (GameFactory, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if !created {
-			tableOptions := sshTableOptions(&gameOptions)
+			tableOptions, tableErr := sshTableOptions(&gameOptions, &options.Table)
+			if tableErr != nil {
+				return nil, tableErr
+			}
 			if _, createErr := registry.CreateTable(ctx, options.TableID, tableOptions); createErr != nil {
 				return nil, createErr
 			}
@@ -167,17 +172,61 @@ func validateGameOptions(options *GameOptions) error {
 	return bot.ValidateControllerKind(options.Bot)
 }
 
-func sshTableOptions(options *GameOptions) *server.TableOptions {
-	tableOptions := &server.TableOptions{
-		SeriesID:    "ssh-series",
-		BaseMatchID: "ssh-match",
-		PlayerCount: 2,
-		HumanSeats:  []domain.Seat{0, 1},
+func sshTableOptions(options *GameOptions, table *server.TableOptions) (*server.TableOptions, error) {
+	gameOptions := GameOptions{}
+	if options != nil {
+		gameOptions = *options
 	}
-	if options != nil && options.Seeded {
-		tableOptions.Deal = domain.SeededDealOptions(options.Seed)
+	selectedTable := server.TableOptions{}
+	if table != nil {
+		selectedTable = *table
 	}
-	return tableOptions
+	seats := selectedTable.PlayerCount
+	if seats == 0 {
+		seats = 2
+	}
+	humanSeats := append([]domain.Seat(nil), selectedTable.HumanSeats...)
+	if len(humanSeats) == 0 {
+		humanSeats = []domain.Seat{0, 1}
+	}
+	controllers, err := tableControllers(&gameOptions, seats, humanSeats)
+	if err != nil {
+		return nil, err
+	}
+	tableOptions := selectedTable
+	tableOptions.SeriesID = "ssh-series"
+	tableOptions.BaseMatchID = "ssh-match"
+	tableOptions.PlayerCount = seats
+	tableOptions.HumanSeats = humanSeats
+	tableOptions.Controllers = controllers
+	if gameOptions.Seeded {
+		tableOptions.Deal = domain.SeededDealOptions(gameOptions.Seed)
+	}
+	return &tableOptions, nil
+}
+
+func tableControllers(
+	options *GameOptions,
+	seats int,
+	humanSeats []domain.Seat,
+) (map[domain.Seat]app.PlayerController, error) {
+	controllers := make(map[domain.Seat]app.PlayerController)
+	for seat := range seats {
+		domainSeat := domain.Seat(seat)
+		if slices.Contains(humanSeats, domainSeat) {
+			continue
+		}
+		controller, err := bot.NewController(bot.ControllerSpec{
+			Kind:   options.Bot,
+			Seed:   options.Seed,
+			Seeded: options.Seeded,
+		}, domainSeat)
+		if err != nil {
+			return nil, err
+		}
+		controllers[domainSeat] = controller
+	}
+	return controllers, nil
 }
 
 func sessionSeat(args []string) (domain.Seat, error) {

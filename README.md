@@ -82,7 +82,16 @@ ssh localhost -p 23234 seat 0
 ssh localhost -p 23234 seat 1
 ```
 
-Omitting the SSH command defaults to `seat 0`.
+For mixed human/bot SSH tables, set table size and human seats:
+
+```sh
+go run ./cmd/durakd ssh -seed 42 -table demo -seats 3 -human-seats 0,1 -bot simple
+ssh localhost -p 23234 seat 0
+ssh localhost -p 23234 seat 1
+```
+
+Omitting the SSH command defaults to `seat 0`. In SSH table mode, non-human
+seats use `-bot`; currently that supports `simple`, `random`, and `heuristic`.
 
 Available player controllers for the opponent are `simple`, `random`,
 `heuristic`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The heuristic bot

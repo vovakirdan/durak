@@ -57,6 +57,21 @@ func TestViewRendersPlayableState(t *testing.T) {
 	}
 }
 
+func TestViewRendersWaitingState(t *testing.T) {
+	model := &Model{state: client.State{
+		MatchID:  "match-1",
+		Phase:    "defense",
+		Seat:     0,
+		Attacker: 0,
+		Defender: 1,
+	}}
+
+	view := model.View().Content
+	if !strings.Contains(view, "Actions: waiting for another seat") {
+		t.Fatalf("View() = %q, want waiting message", view)
+	}
+}
+
 func TestUpdateSubmitsNumberedAction(t *testing.T) {
 	model := NewModel(context.Background(), testGame(t))
 	if len(model.state.LegalActions) == 0 {
