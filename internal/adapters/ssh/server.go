@@ -1,0 +1,85 @@
+package ssh
+
+import (
+	"context"
+	"errors"
+	"fmt"
+
+	tea "charm.land/bubbletea/v2"
+	wish "charm.land/wish/v2"
+	wishtea "charm.land/wish/v2/bubbletea"
+	gossh "github.com/charmbracelet/ssh"
+	"github.com/vovakirdan/durak/internal/adapters/bot"
+	"github.com/vovakirdan/durak/internal/adapters/tui"
+	"github.com/vovakirdan/durak/internal/app"
+	"github.com/vovakirdan/durak/internal/app/client"
+	"github.com/vovakirdan/durak/internal/domain"
+)
+
+// DefaultAddr is the development SSH listen address.
+const DefaultAddr = "localhost:23234"
+
+var (
+	// ErrNilOptions means NewServer received nil options.
+	ErrNilOptions = errors.New("nil ssh server options")
+	// ErrMissingHostKeyPath means NewServer would otherwise create a key in cwd.
+	ErrMissingHostKeyPath = errors.New("missing ssh host key path")
+)
+
+// GameFactory creates one local game for a single SSH session.
+type GameFactory func(context.Context) (*client.LocalGame, error)
+
+// ServerOptions configures the development Wish server.
+type ServerOptions struct {
+	Addr        string
+	HostKeyPath string
+	NewGame     GameFactory
+}
+
+// NewServer builds a Wish SSH server that hosts one TUI game per session.
+func NewServer(options *ServerOptions) (*gossh.Server, error) {
+	if options == nil {
+		return nil, ErrNilOptions
+	}
+	if options.HostKeyPath == "" {
+		return nil, ErrMissingHostKeyPath
+	}
+	addr := options.Addr
+	if addr == "" {
+		addr = DefaultAddr
+	}
+	newGame := options.NewGame
+	if newGame == nil {
+		newGame = NewLocalGame
+	}
+
+	sshOptions := []gossh.Option{
+		wish.WithAddress(addr),
+		wish.WithMiddleware(wishtea.Middleware(func(sess gossh.Session) (tea.Model, []tea.ProgramOption) {
+			game, err := newGame(sess.Context())
+			if err != nil {
+				return tui.NewErrorModel(err), nil
+			}
+			return tui.NewModel(sess.Context(), game), nil
+		})),
+		wish.WithHostKeyPath(options.HostKeyPath),
+	}
+	return wish.NewServer(sshOptions...)
+}
+
+// NewLocalGame creates the default one-human SSH game against a simple bot.
+func NewLocalGame(ctx context.Context) (*client.LocalGame, error) {
+	game, err := client.NewLocalGame(ctx, &client.LocalGameOptions{
+		SeriesID:    "ssh-series",
+		BaseMatchID: "ssh-match",
+		PlayerCount: 2,
+		HumanSeat:   domain.Seat(0),
+		Controllers: map[domain.Seat]app.PlayerController{
+			domain.Seat(1): app.StrategyController{Strategy: bot.NewSimpleStrategy()},
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("new local ssh game: %w", err)
+	}
+	return game, nil
+}

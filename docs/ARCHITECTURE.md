@@ -60,13 +60,13 @@
 - **Internal structure:** Bubble Tea model, update handlers, view renderer, and domain-to-view mapping.
 - **Key dependencies:** application/session layer and Charm UI packages. It must not own rule logic.
 
-### Future Wish SSH Surface
+### Wish SSH Surface
 
 - **Type:** SSH-hosted terminal application.
-- **Primary responsibilities:** create remote terminal sessions, map SSH identity to player identity, attach users to tables, and host a Bubble Tea program per session.
-- **Internal structure:** Wish server setup, auth/session middleware, table/session registry, and TUI program factory.
-- **Key dependencies:** application/session layer, future persistence adapter, and Charm Wish.
-- **Transport decision:** Wish-hosted SSH is the next remote surface. Do not add
+- **Primary responsibilities:** create development SSH terminal sessions and host a Bubble Tea program per session; later map SSH identity to player identity and attach users to tables.
+- **Internal structure:** Wish server setup, TUI program factory, and later auth/session middleware plus table/session registry.
+- **Key dependencies:** application/session layer, TUI adapter, and Charm Wish.
+- **Transport decision:** Wish-hosted SSH is the current remote surface. Do not add
   HTTP, gRPC, or protobuf transport until a real non-terminal client needs it.
 
 ## 5. Execution and Service Components
@@ -270,15 +270,15 @@
 
 - **Top-level directories:**
   - `cmd/durak`: local CLI executable.
-  - `cmd/durakd`: future SSH daemon executable.
+  - `cmd/durakd`: SSH daemon executable.
   - `internal/domain`: framework-free game domain.
   - `internal/app`: session/application services, match config value objects, and ports.
   - `internal/adapters/cli`: CLI renderer and interactive loop runner.
   - `internal/adapters/textcmd`: shared terminal-style player command parsing.
   - `internal/adapters/bot`: bot strategy implementations.
   - `internal/adapters/ai`: provider-neutral AI player adapters.
-  - `internal/adapters/tui`: future Bubble Tea UI.
-  - `internal/adapters/ssh`: future Wish integration.
+  - `internal/adapters/tui`: Bubble Tea UI.
+  - `internal/adapters/ssh`: Wish integration.
   - `internal/adapters/storage`: future persistence adapters.
   - `docs`: planning and architecture documents.
 - **Recommended current layout for MVP:**
@@ -353,7 +353,7 @@ the external process stdin and treats the first non-empty stdout line as the raw
 command. This path is a debug/local-wrapper escape hatch, not the primary AI
 provider integration.
 
-### 13.5 Future SSH Match Flow
+### 13.5 SSH Match Flow
 
 1. `durakd` accepts an SSH session through Wish.
 2. SSH adapter maps the connection to a player identity.

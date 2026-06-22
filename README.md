@@ -65,6 +65,13 @@ Run the local TUI prototype with:
 go run ./cmd/durak tui -seed 42 -bot simple
 ```
 
+Run the development SSH-hosted TUI with:
+
+```sh
+go run ./cmd/durakd ssh
+ssh localhost -p 23234
+```
+
 Available player controllers for the opponent are `simple`, `random`,
 `heuristic`, `ai-raw-mock`, `ai-raw-exec`, and `ai-openai`. The heuristic bot
 uses the first seat-view position evaluator and action ranking layer. The AI

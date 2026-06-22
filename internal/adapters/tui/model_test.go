@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/vovakirdan/durak/internal/app"
 	"github.com/vovakirdan/durak/internal/app/client"
 	"github.com/vovakirdan/durak/internal/domain"
@@ -40,7 +40,7 @@ func TestViewRendersPlayableState(t *testing.T) {
 		LegalActions:   []client.LegalAction{{ID: "1", Label: "defend 1 7C"}},
 	}}
 
-	view := model.View()
+	view := model.View().Content
 	for _, want := range []string{
 		"Durak TUI",
 		"Match: match-1 v2 | Phase: defense",
@@ -62,7 +62,7 @@ func TestUpdateSubmitsNumberedAction(t *testing.T) {
 	}
 	before := model.state.Version
 
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	updated, _ := model.Update(keyPress("1"))
 	next := updated.(*Model)
 
 	if next.err != nil {
@@ -76,7 +76,7 @@ func TestUpdateSubmitsNumberedAction(t *testing.T) {
 func TestUpdateHandlesPastedKeys(t *testing.T) {
 	model := NewModel(context.Background(), testGame(t))
 
-	_, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1q")})
+	_, cmd := model.Update(keyPress("1q"))
 
 	if cmd == nil {
 		t.Fatal("cmd = nil, want quit command after pasted action and q")
@@ -91,7 +91,7 @@ func TestUpdateBuffersAmbiguousActionID(t *testing.T) {
 		},
 	}}
 
-	updated, cmd := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("1")})
+	updated, cmd := model.Update(keyPress("1"))
 	next := updated.(*Model)
 
 	if cmd != nil {
@@ -116,7 +116,7 @@ func TestUpdateSubmitsBufferedActionOnEnter(t *testing.T) {
 		actionInput: "1",
 	}
 
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	updated, _ := model.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	next := updated.(*Model)
 
 	if next.actionInput != "" {
@@ -135,7 +135,7 @@ func TestUpdateStartsNextMatchAfterComplete(t *testing.T) {
 	}
 	model := &Model{ctx: context.Background(), game: game, state: complete}
 
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")})
+	updated, _ := model.Update(keyPress("n"))
 	next := updated.(*Model)
 
 	if next.err != nil {
@@ -144,6 +144,15 @@ func TestUpdateStartsNextMatchAfterComplete(t *testing.T) {
 	if next.state.MatchID != "tui-test-2" || next.state.Phase == "complete" {
 		t.Fatalf("state = %+v, want active second match", next.state)
 	}
+}
+
+func keyPress(input string) tea.KeyPressMsg {
+	runes := []rune(input)
+	key := tea.KeyPressMsg{Text: input}
+	if len(runes) == 1 {
+		key.Code = runes[0]
+	}
+	return key
 }
 
 func testGame(t *testing.T) *client.LocalGame {
